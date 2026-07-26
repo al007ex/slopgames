@@ -1,0 +1,199 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+<title>DUOSTRIKE — two-player co-op arena</title>
+<link rel="stylesheet" href="/css/style.css" />
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><text y='26' font-size='26'>🎯</text></svg>" />
+<script type="importmap">
+{ "imports": { "three": "/vendor/three.module.js" } }
+</script>
+</head>
+<body>
+
+<canvas id="gl"></canvas>
+
+<!-- ============================== IN-GAME HUD ============================== -->
+<div id="hud" class="hidden">
+  <div id="crosshair"><i class="ch t"></i><i class="ch b"></i><i class="ch l"></i><i class="ch r"></i><i class="ch dot"></i></div>
+  <div id="hitmarker"></div>
+
+  <div id="topleft">
+    <div id="levelName"></div>
+    <div id="objective"></div>
+    <ul id="taskList"></ul>
+  </div>
+
+  <div id="topright">
+    <div id="waveBox" class="hidden"></div>
+    <div id="partnerBox"></div>
+    <div id="coinBox"><span class="coin">◈</span> <b id="coin">0</b></div>
+  </div>
+
+  <div id="waypoint" class="hidden"><span id="wpArrow">▲</span><span id="wpDist"></span></div>
+
+  <div id="prompt" class="hidden"><kbd>E</kbd> <span id="promptText"></span></div>
+
+  <div id="bottomleft">
+    <div id="healthWrap">
+      <div id="healthBar"><i id="healthFill"></i></div>
+      <span id="healthNum">100</span>
+    </div>
+    <div id="toasts"></div>
+  </div>
+
+  <div id="bottomright">
+    <div id="ammoBox"><b id="ammoMag">30</b><span id="ammoRes">/ 180</span></div>
+    <div id="weaponName">Rifle</div>
+    <div id="weaponSlots">
+      <span data-w="rifle" class="on">1 Rifle</span>
+      <span data-w="shotgun">2 Shotgun</span>
+      <span data-w="sword">3 Sword</span>
+    </div>
+  </div>
+
+  <div id="reloadBar" class="hidden"><i></i></div>
+  <div id="damageFlash"></div>
+  <div id="dmgNumbers"></div>
+
+  <div id="downOverlay" class="hidden">
+    <h2>DOWN</h2>
+    <p>Back up in <b id="downTimer">5</b></p>
+  </div>
+
+  <div id="patternOverlay" class="hidden"></div>
+</div>
+
+<!-- ============================== SCREENS ================================= -->
+<div id="screens">
+
+  <!-- ---------- landing ---------- -->
+  <section id="menu" class="screen on">
+    <div class="panel">
+      <h1>DUO<span>STRIKE</span></h1>
+      <p class="tag">A two-player co-op arena run. Exactly two — no more, no fewer.</p>
+
+      <label class="field">
+        <span>Your name</span>
+        <input id="nameInput" maxlength="14" placeholder="Player" autocomplete="off" />
+      </label>
+
+      <div class="row">
+        <button id="createBtn" class="primary">Create Room</button>
+      </div>
+
+      <div class="divider"><span>or</span></div>
+
+      <div class="row join">
+        <input id="codeInput" maxlength="4" placeholder="CODE" autocomplete="off" spellcheck="false" />
+        <button id="joinBtn">Join Room</button>
+      </div>
+
+      <p id="menuError" class="error"></p>
+
+      <details class="help">
+        <summary>Controls</summary>
+        <ul>
+          <li><b>WASD</b> move &middot; <b>Mouse</b> look &middot; <b>Space</b> jump</li>
+          <li><b>Shift</b> sprint &middot; <b>Ctrl</b> slide (while sprinting) &middot; <b>C</b> crouch</li>
+          <li><b>Space</b> against a wall while airborne — wall jump</li>
+          <li><b>Left click</b> fire / swing &middot; <b>Right click</b> aim / block &middot; <b>R</b> reload</li>
+          <li><b>1 2 3</b> rifle, shotgun, sword &middot; <b>E</b> interact &middot; <b>Esc</b> menu</li>
+        </ul>
+      </details>
+    </div>
+  </section>
+
+  <!-- ---------- lobby ---------- -->
+  <section id="lobby" class="screen">
+    <div class="panel">
+      <h2>Lobby</h2>
+      <p class="tag">Send this code to the other player.</p>
+      <div id="roomCode">----</div>
+      <button id="copyBtn" class="ghost small">Copy code</button>
+
+      <div id="slots">
+        <div class="slot empty" data-slot="0"><span class="who">Waiting…</span><span class="state"></span></div>
+        <div class="slot empty" data-slot="1"><span class="who">Waiting…</span><span class="state"></span></div>
+      </div>
+
+      <div class="row">
+        <button id="readyBtn" class="ghost">Ready</button>
+        <button id="startBtn" class="primary" disabled>Start Game</button>
+      </div>
+      <p id="lobbyNote" class="tag small">Start unlocks when both slots are filled and both are ready.</p>
+      <button id="leaveBtn" class="ghost small">Leave</button>
+    </div>
+  </section>
+
+  <!-- ---------- pause / settings ---------- -->
+  <section id="pause" class="screen">
+    <div class="panel">
+      <h2>Paused</h2>
+      <label class="field slider">
+        <span>Field of view — <b id="fovVal">95</b></span>
+        <input id="fovSlider" type="range" min="70" max="120" step="1" value="95" />
+      </label>
+      <label class="field slider">
+        <span>Mouse sensitivity — <b id="sensVal">1.00</b></span>
+        <input id="sensSlider" type="range" min="0.2" max="3" step="0.05" value="1" />
+      </label>
+      <label class="field check">
+        <input id="invertY" type="checkbox" /> <span>Invert vertical look</span>
+      </label>
+      <div class="row"><button id="resumeBtn" class="primary">Resume</button></div>
+      <p class="tag small">Click anywhere in the world to lock the mouse again.</p>
+    </div>
+  </section>
+
+  <!-- ---------- npc dialogue ---------- -->
+  <section id="dialogue" class="screen soft">
+    <div class="panel talk">
+      <h3 id="npcName">Villager</h3>
+      <p id="npcLine"></p>
+      <div class="row"><button id="npcClose" class="primary">Close <kbd>E</kbd></button></div>
+    </div>
+  </section>
+
+  <!-- ---------- shop ---------- -->
+  <section id="shop" class="screen soft">
+    <div class="panel wide">
+      <h3>Bexi the Dyer <small>— colours only, nothing that changes your stats</small></h3>
+      <p class="tag">You have <b class="coin">◈</b> <b id="shopCoin">0</b></p>
+      <div id="shopGrid"></div>
+      <div class="row"><button id="shopClose" class="primary">Close <kbd>E</kbd></button></div>
+    </div>
+  </section>
+
+  <!-- ---------- end screen ---------- -->
+  <section id="end" class="screen">
+    <div class="panel wide">
+      <h1>RUN COMPLETE</h1>
+      <div id="endStats"></div>
+      <div id="endPlayers"></div>
+      <div class="row"><button id="againBtn" class="primary">Play Again</button></div>
+      <p class="tag small">Both of you return to a fresh lobby.</p>
+    </div>
+  </section>
+
+  <!-- ---------- partner dropped ---------- -->
+  <section id="disconnected" class="screen">
+    <div class="panel">
+      <h2>Waiting for your partner</h2>
+      <p id="discReason" class="tag"></p>
+      <p class="tag small">The run is paused. They can rejoin with the same code: <b id="discCode"></b></p>
+      <button id="discLeave" class="ghost small">Leave run</button>
+    </div>
+  </section>
+
+  <!-- ---------- loading ---------- -->
+  <section id="loading" class="screen">
+    <div class="panel"><h2 id="loadTitle">Loading…</h2><p id="loadSub" class="tag"></p></div>
+  </section>
+
+</div>
+
+<script type="module" src="/js/main.js"></script>
+</body>
+</html>
