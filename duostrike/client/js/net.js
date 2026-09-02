@@ -1,11 +1,11 @@
 // Thin socket.io wrapper. All authority lives on the server; this just carries
 // intent up and truth down.
 
-import { io } from '/socket.io/socket.io.esm.min.js';
+import { io } from '../socket.io/socket.io.esm.min.js';
 
 export class Net {
   constructor() {
-    this.sock = io({ transports: ['websocket', 'polling'] });
+    this.sock = io({ path: '/duostrike/socket.io', transports: ['websocket', 'polling'] });
     this.handlers = new Map();
     this.you = null;
     this.code = null;

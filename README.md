@@ -39,3 +39,13 @@ Then open the local URL shown by Vite, usually <http://localhost:5173>.
 
 These games are experiments and may change over time. See each game's README
 for more detailed controls, modes, and testing instructions.
+
+## Slopgames portal
+
+`portal/` is the production launcher for the collection. It serves the arcade,
+starts each game only after someone presses Play, and stops an inactive game
+server after 15 minutes. It also provides first-party, pseudonymous analytics
+at `/admin` when `ADMIN_TOKEN` is configured.
+
+Deployment templates for systemd, Nginx, and its environment file are in
+`deploy/`. Pixel Brawl must be built with `npm run build` before deployment.
