@@ -1,7 +1,8 @@
 import { createServer, request as httpRequest } from 'node:http';
 import { appendFile, mkdir, readdir, readFile, stat } from 'node:fs/promises';
 import { spawn } from 'node:child_process';
-import { createHmac, randomBytes } from 'node:crypto';
+import { createHash, createHmac, randomBytes } from 'node:crypto';
+import { readFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -11,9 +12,13 @@ const port = Number(process.env.PORT || 3200);
 const idleMs = Number(process.env.GAME_IDLE_MS || 15 * 60_000);
 const heartbeatGraceMs = 90_000;
 const analyticsDir = path.join(here, 'data');
+const publicDir = path.join(here, 'public');
 const analyticsSecret = process.env.ANALYTICS_SECRET || randomBytes(32).toString('hex');
 const adminToken = process.env.ADMIN_TOKEN || '';
+const origin = process.env.SITE_ORIGIN || 'https://slopgames.al007ex.com';
 
+// One entry per game. `dir`, `port` and `health` drive the launcher; the rest is
+// presentation, so adding a game to the arcade means adding an object here.
 const games = {
   duostrike: {
     name: 'DuoStrike',
@@ -21,6 +26,11 @@ const games = {
     port: 3201,
     health: '/health',
     description: 'A two-player co-op arena adventure.',
+    blurb: 'Bring a friend, clear the arena, and do not leave your teammate behind. Krunker-style movement meets co-op objectives.',
+    art: '/assets/art/duostrike.jpg',
+    tags: ['co-op', 'shooter', 'multiplayer'],
+    players: '2 PLAYERS',
+    featured: true,
     state: 'stopped', process: null, sessions: new Map(), lastActivity: 0, startPromise: null,
   },
   'pixel-brawl': {
@@ -29,14 +39,26 @@ const games = {
     port: 3202,
     health: '/api/status',
     description: 'A rapid-fire pixel arena brawler.',
+    blurb: 'Pick a brawler, queue up, and take the arena one round at a time. Gem Grab, Showdown, Bounty and Duels, solo or against players.',
+    art: '/assets/art/pixel-brawl.jpg',
+    tags: ['brawler', 'pixel', 'multiplayer', 'solo'],
+    players: 'SOLO OR ONLINE',
     state: 'stopped', process: null, sessions: new Map(), lastActivity: 0, startPromise: null,
   },
 };
 
+const slugOf = (game) => Object.keys(games).find((slug) => games[slug] === game);
+
 const launchAttempts = new Map();
 function send(res, status, body, type = 'application/json; charset=utf-8', extraHeaders = {}) {
-  res.writeHead(status, { 'content-type': type, 'cache-control': 'no-store', 'x-content-type-options': 'nosniff', ...extraHeaders });
-  res.end(typeof body === 'string' ? body : JSON.stringify(body));
+  res.writeHead(status, {
+    'content-type': type,
+    'cache-control': 'no-store',
+    'x-content-type-options': 'nosniff',
+    'referrer-policy': 'strict-origin-when-cross-origin',
+    ...extraHeaders,
+  });
+  res.end(typeof body === 'string' || Buffer.isBuffer(body) ? body : JSON.stringify(body));
 }
 function remoteIp(req) { return req.headers['x-forwarded-for']?.split(',')[0].trim() || req.socket.remoteAddress || 'unknown'; }
 function cookie(req, name) {
@@ -140,7 +162,7 @@ setInterval(async () => {
 function finishSession(game, token, session) {
   if (!game.sessions.delete(token)) return;
   const seconds = Math.max(0, Math.round((Date.now() - session.startedAt) / 1000));
-  logEvent({ type: 'game_session', game: Object.entries(games).find(([, value]) => value === game)?.[0], visitor: session.visitor, seconds });
+  logEvent({ type: 'game_session', game: slugOf(game), visitor: session.visitor, seconds });
 }
 function hasAdminAccess(req) { return Boolean(adminToken) && req.headers.authorization === `Bearer ${adminToken}`; }
 async function analyticsSummary(days = 30) {
@@ -168,35 +190,167 @@ async function analyticsSummary(days = 30) {
   };
 }
 
-const mime = { '.css': 'text/css; charset=utf-8', '.js': 'application/javascript; charset=utf-8', '.svg': 'image/svg+xml', '.png': 'image/png', '.ico': 'image/x-icon', '.html': 'text/html; charset=utf-8' };
-async function staticFile(res, relative) {
-  const file = path.resolve(here, 'public', relative.replace(/^\/+/, ''));
-  if (!file.startsWith(path.join(here, 'public') + path.sep)) return send(res, 403, 'Forbidden', 'text/plain');
-  try { if (!(await stat(file)).isFile()) throw new Error('not file'); send(res, 200, await readFile(file), mime[path.extname(file)] || 'application/octet-stream'); }
-  catch { send(res, 404, 'Not found', 'text/plain; charset=utf-8'); }
+/* ------------------------------------------------------------ rendering */
+const escape = (value) => String(value).replace(/[&<>"']/g, (char) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[char]));
+const favicon = "data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect width='32' height='32' rx='7' fill='%23090b14'/><text x='16' y='23' font-size='19' font-family='monospace' font-weight='bold' fill='%23d9ff55' text-anchor='middle'>S</text></svg>";
+
+function head({ title, description, url, image }) {
+  return `<meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta name="theme-color" content="#090b14">`
+    + `<title>${escape(title)}</title><meta name="description" content="${escape(description)}">`
+    + `<link rel="canonical" href="${escape(url)}"><link rel="icon" href="${favicon}">`
+    + `<meta property="og:type" content="website"><meta property="og:site_name" content="Slopgames">`
+    + `<meta property="og:title" content="${escape(title)}"><meta property="og:description" content="${escape(description)}"><meta property="og:url" content="${escape(url)}">`
+    + (image ? `<meta property="og:image" content="${escape(origin + image)}"><meta name="twitter:image" content="${escape(origin + image)}">` : '')
+    + `<meta name="twitter:card" content="${image ? 'summary_large_image' : 'summary'}"><meta name="twitter:title" content="${escape(title)}"><meta name="twitter:description" content="${escape(description)}">`
+    + `<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin><link rel="stylesheet" href="/assets/site.css">`;
 }
+
+const wordmark = '<a class="wordmark" href="/">SLOP<span>GAMES</span></a>';
+
+// Art is served with a long cache lifetime, so its URL carries a content hash;
+// replacing an image changes the URL and the browser fetches the new one.
+const assetVersions = new Map();
+function asset(relative) {
+  if (!assetVersions.has(relative)) {
+    try {
+      const bytes = readFileSync(path.join(publicDir, relative.replace(/^\/assets\//, '')));
+      assetVersions.set(relative, `${relative}?v=${createHash('sha1').update(bytes).digest('hex').slice(0, 10)}`);
+    } catch { assetVersions.set(relative, relative); }
+  }
+  return assetVersions.get(relative);
+}
+
+function gameCard(slug, game) {
+  return `<article class="game-card${game.featured ? ' featured' : ''}" data-slug="${slug}" data-name="${escape(game.name)}" data-tags="${game.tags.join(',')}" data-blurb="${escape(game.blurb)}">`
+    + `<a class="card-art" href="/${slug}/" data-launch="${slug}" aria-label="Play ${escape(game.name)}">`
+    + `<img src="${asset(game.art)}" width="1200" height="675" alt="${escape(game.name)} key art"${game.featured ? ' fetchpriority="high"' : ' loading="lazy"'}>`
+    + `<div class="badges"><span class="badge">${escape(game.players)}</span><span class="badge live" hidden><i></i><b>0 PLAYING</b></span></div>`
+    + `<div class="play-veil"><span>Play now</span></div>`
+    + `<div class="card-overlay"><h3>${escape(game.name)}</h3><p>${escape(game.blurb)}</p></div></a></article>`;
+}
+
+function homePage() {
+  const entries = Object.entries(games);
+  const featured = entries.find(([, game]) => game.featured)?.[1] || entries[0][1];
+  const tags = ['all', ...new Set(entries.flatMap(([, game]) => game.tags))];
+  const description = 'Play free browser games on Slopgames — no download, no install. Launch DuoStrike or Pixel Brawl and play instantly.';
+  // The 2x2 featured tile only earns its space once there are enough games to
+  // wrap around it; below that every tile stays the same size and fills the row.
+  const mosaic = entries.length >= 5;
+
+  return `<!doctype html><html lang="en"><head>${head({
+    title: 'Slopgames — free browser games, no download',
+    description,
+    url: `${origin}/`,
+    image: asset(featured.art),
+  })}<script type="application/ld+json">${JSON.stringify({
+    '@context': 'https://schema.org',
+    '@type': 'CollectionPage',
+    name: 'Slopgames',
+    url: `${origin}/`,
+    description,
+    hasPart: entries.map(([slug, game]) => ({
+      '@type': 'VideoGame', name: game.name, description: game.description,
+      url: `${origin}/${slug}/`, image: origin + asset(game.art),
+      applicationCategory: 'Game', operatingSystem: 'Web browser', isAccessibleForFree: true,
+    })),
+  })}</script></head><body>
+<div class="glow one"></div><div class="glow two"></div>
+<header class="site-header"><div class="shell">${wordmark}
+<div class="search"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>
+<input id="search" type="search" placeholder="Search games and categories" aria-label="Search games" autocomplete="off"></div>
+<nav><a href="#how">How it works</a></nav></div></header>
+<main>
+<section class="arcade shell" id="games">
+<div class="section-head"><div><p class="eyebrow">PLAY INSTANTLY</p><h2>Top games right now</h2></div>
+<span class="count" id="result-count">${String(entries.length).padStart(2, '0')} GAMES</span></div>
+<div class="filters">${tags.map((tag, index) => `<button class="chip" data-tag="${tag}" aria-pressed="${index === 0}">${tag === 'all' ? 'All games' : escape(tag)}</button>`).join('')}</div>
+<div class="game-grid${mosaic ? ' mosaic' : ''}">${entries.map(([slug, game]) => gameCard(slug, game)).join('')}
+<p class="empty" id="no-results" hidden>No games match that search — try another word.</p></div>
+</section>
+
+<section class="how shell" id="how">
+<div class="how-grid">
+<div><b>01 — PICK</b><h3>Choose a game</h3><p>Everything runs in the browser. Nothing to download, nothing to install, no account needed to look around.</p></div>
+<div><b>02 — LAUNCH</b><h3>The server wakes up</h3><p>Press play and a dedicated game server starts on demand, usually in a couple of seconds. You play right inside the page.</p></div>
+<div><b>03 — SLEEP</b><h3>It shuts itself down</h3><p>When the last player leaves, the server sleeps again — which keeps the arcade cheap to run and quick to boot.</p></div>
+</div></section>
+</main>
+<footer><div class="shell">${wordmark}<span>Made for curious players.</span></div></footer>
+
+<div class="launcher" id="launcher" aria-hidden="true" role="dialog" aria-modal="true" aria-labelledby="launch-title">
+<div class="launcher-box"><button class="close" aria-label="Close game">×</button>
+<p class="eyebrow" id="launch-kicker">GET READY</p><h2 id="launch-title">Starting game…</h2>
+<p id="launch-text">Waking up a game server. This usually takes a few seconds.</p>
+<div class="progress"><i></i></div>
+<div class="embed-actions"><button id="full-screen">Fullscreen</button><button class="close">Back to arcade</button></div>
+<iframe id="game-frame" title="Slopgames game" allow="fullscreen; autoplay; gamepad; pointer-lock" allowfullscreen></iframe></div></div>
+<script src="/assets/site.js"></script></body></html>`;
+}
+
 function offlinePage(game) {
-  const slug = Object.entries(games).find(([, value]) => value === game)[0];
+  const slug = slugOf(game);
   const title = `${game.name} — play free in your browser | Slopgames`;
-  return `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${title}</title><meta name="description" content="${game.description} Play ${game.name} free in your browser on Slopgames."><link rel="canonical" href="https://slopgames.al007ex.com/${slug}/"><meta property="og:type" content="website"><meta property="og:site_name" content="Slopgames"><meta property="og:title" content="${title}"><meta property="og:description" content="${game.description}"><meta property="og:url" content="https://slopgames.al007ex.com/${slug}/"><meta name="twitter:card" content="summary"><meta name="twitter:title" content="${title}"><meta name="twitter:description" content="${game.description}"><link rel="stylesheet" href="/assets/site.css"><script type="application/ld+json">{"@context":"https://schema.org","@type":"VideoGame","name":"${game.name}","description":"${game.description}","url":"https://slopgames.al007ex.com/${slug}/","applicationCategory":"Game","operatingSystem":"Web browser","isAccessibleForFree":true}</script></head><body class="offline"><main><a class="wordmark" href="/">SLOP<span>GAMES</span></a><section class="offline-card"><p class="eyebrow">GAME SERVER SLEEPING</p><h1>${game.name}</h1><p>${game.description} Start a fresh game server when you are ready to play.</p><button data-launch="${slug}">Launch game</button><p class="small">The server automatically sleeps after 15 minutes without active players.</p></section></main><script src="/assets/site.js"></script></body></html>`;
+  return `<!doctype html><html lang="en"><head>${head({
+    title,
+    description: `${game.description} Play ${game.name} free in your browser on Slopgames.`,
+    url: `${origin}/${slug}/`,
+    image: asset(game.art),
+  })}<script type="application/ld+json">${JSON.stringify({
+    '@context': 'https://schema.org', '@type': 'VideoGame', name: game.name, description: game.description,
+    url: `${origin}/${slug}/`, image: origin + asset(game.art),
+    applicationCategory: 'Game', operatingSystem: 'Web browser', isAccessibleForFree: true,
+  })}</script></head><body class="offline"><main>${wordmark}
+<section class="offline-card"><img class="offline-art" src="${asset(game.art)}" width="1200" height="675" alt="${escape(game.name)} key art" fetchpriority="high">
+<p class="eyebrow">GAME SERVER SLEEPING</p><h1>${escape(game.name)}</h1>
+<p>${escape(game.blurb)}</p><button data-launch="${slug}">Launch ${escape(game.name)}</button>
+<p class="small">Servers sleep after 15 minutes without active players, and wake again on demand.</p></section>
+</main><script src="/assets/site.js"></script></body></html>`;
+}
+
+/* --------------------------------------------------------- static assets */
+const mime = { '.css': 'text/css; charset=utf-8', '.js': 'application/javascript; charset=utf-8', '.svg': 'image/svg+xml', '.png': 'image/png', '.jpg': 'image/jpeg', '.webp': 'image/webp', '.ico': 'image/x-icon', '.html': 'text/html; charset=utf-8' };
+async function staticFile(res, relative, cache = false) {
+  const file = path.resolve(publicDir, relative.replace(/^\/+/, ''));
+  if (!file.startsWith(publicDir + path.sep)) return send(res, 403, 'Forbidden', 'text/plain; charset=utf-8');
+  try {
+    if (!(await stat(file)).isFile()) throw new Error('not a file');
+    send(res, 200, await readFile(file), mime[path.extname(file)] || 'application/octet-stream',
+      cache ? { 'cache-control': 'public, max-age=604800' } : {});
+  } catch {
+    send(res, 404, 'Not found', 'text/plain; charset=utf-8');
+  }
 }
 
 const server = createServer(async (req, res) => {
   const url = new URL(req.url || '/', `http://${req.headers.host || 'localhost'}`);
-  if (req.method === 'GET' && url.pathname.startsWith('/assets/')) return staticFile(res, url.pathname.slice(8));
-  if (req.method === 'GET' && url.pathname === '/robots.txt') return send(res, 200, 'User-agent: *\nAllow: /\nSitemap: https://slopgames.al007ex.com/sitemap.xml\n', 'text/plain; charset=utf-8');
-  if (req.method === 'GET' && url.pathname === '/sitemap.xml') return send(res, 200, '<?xml version="1.0" encoding="UTF-8"?><urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9"><url><loc>https://slopgames.al007ex.com/</loc><changefreq>weekly</changefreq><priority>1.0</priority></url><url><loc>https://slopgames.al007ex.com/duostrike/</loc><changefreq>weekly</changefreq><priority>0.9</priority></url><url><loc>https://slopgames.al007ex.com/pixel-brawl/</loc><changefreq>weekly</changefreq><priority>0.9</priority></url></urlset>', 'application/xml; charset=utf-8');
-  if (req.method === 'GET' && url.pathname === '/admin') return staticFile(res, 'admin.html');
-  if (req.method === 'GET' && url.pathname === '/api/admin/stats') { if (!hasAdminAccess(req)) return send(res, 401, { error: 'Unauthorized' }); return send(res, 200, await analyticsSummary(Math.min(90, Math.max(1, Number(url.searchParams.get('days')) || 30)))); }
-  if (req.method === 'GET' && url.pathname.startsWith('/__game-offline/')) {
+  // Crawlers and uptime checks send HEAD; Node drops the body for those itself,
+  // so every GET route can answer them unchanged.
+  const method = req.method === 'HEAD' ? 'GET' : req.method;
+  if (method === 'GET' && url.pathname.startsWith('/assets/')) {
+    return staticFile(res, url.pathname.slice(8), url.pathname.startsWith('/assets/art/'));
+  }
+  if (method === 'GET' && url.pathname === '/robots.txt') return send(res, 200, `User-agent: *\nAllow: /\nDisallow: /admin\nSitemap: ${origin}/sitemap.xml\n`, 'text/plain; charset=utf-8');
+  if (method === 'GET' && url.pathname === '/sitemap.xml') {
+    const urls = [`${origin}/`, ...Object.keys(games).map((slug) => `${origin}/${slug}/`)];
+    return send(res, 200, `<?xml version="1.0" encoding="UTF-8"?><urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">${urls.map((loc, index) => `<url><loc>${loc}</loc><changefreq>weekly</changefreq><priority>${index === 0 ? '1.0' : '0.9'}</priority></url>`).join('')}</urlset>`, 'application/xml; charset=utf-8');
+  }
+  if (method === 'GET' && url.pathname === '/admin') return staticFile(res, 'admin.html');
+  if (method === 'GET' && url.pathname === '/api/admin/stats') { if (!hasAdminAccess(req)) return send(res, 401, { error: 'Unauthorized' }); return send(res, 200, await analyticsSummary(Math.min(90, Math.max(1, Number(url.searchParams.get('days')) || 30)))); }
+  if (method === 'GET' && url.pathname.startsWith('/__game-offline/')) {
     const game = games[url.pathname.split('/').pop()];
     if (!game) return send(res, 404, { error: 'Game not found' });
-    logPageView(req, `/${Object.entries(games).find(([, value]) => value === game)[0]}/`);
+    logPageView(req, `/${slugOf(game)}/`);
     return send(res, 200, offlinePage(game), 'text/html; charset=utf-8');
   }
-  if (req.method === 'GET' && url.pathname === '/api/games') return send(res, 200, { games: Object.entries(games).map(([slug, g]) => ({ slug, name: g.name, state: g.state, players: g.sessions.size })) });
+  if (method === 'GET' && url.pathname === '/api/games') {
+    return send(res, 200, { games: Object.entries(games).map(([slug, game]) => ({
+      slug, name: game.name, state: game.state, players: game.sessions.size,
+      description: game.description, blurb: game.blurb, art: game.art, tags: game.tags,
+    })) });
+  }
   const match = url.pathname.match(/^\/api\/games\/([a-z-]+)\/(launch|heartbeat)$/);
-  if (req.method === 'POST' && match) {
+  if (method === 'POST' && match) {
     const game = games[match[1]]; if (!game) return send(res, 404, { error: 'Game not found' });
     if (match[2] === 'launch') {
       if (!allowLaunch(req)) return send(res, 429, { error: 'Please wait a moment before launching again.' });
@@ -208,7 +362,7 @@ const server = createServer(async (req, res) => {
     if (typeof token === 'string' && game.sessions.has(token)) { game.sessions.get(token).lastSeen = Date.now(); game.lastActivity = Date.now(); return send(res, 204, '', undefined, { 'set-cookie': sessionCookie(req, match[1], token) }); }
     return send(res, 401, { error: 'Session expired' });
   }
-  if (req.method === 'GET' && url.pathname === '/') { logPageView(req, '/'); return staticFile(res, 'index.html'); }
+  if (method === 'GET' && url.pathname === '/') { logPageView(req, '/'); return send(res, 200, homePage(), 'text/html; charset=utf-8'); }
   send(res, 404, 'Not found', 'text/plain; charset=utf-8');
 });
 await mkdir(analyticsDir, { recursive: true, mode: 0o700 });

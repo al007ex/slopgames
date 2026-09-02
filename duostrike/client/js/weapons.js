@@ -4,7 +4,7 @@
 // server re-casts the same ray and is the only thing that decides damage.
 
 import * as THREE from 'three';
-import { WEAPONS, WEAPON_ORDER } from '/shared/constants.js';
+import { WEAPONS, WEAPON_ORDER } from '#shared/constants.js';
 
 function mk(w, h, d, color, x, y, z, rx = 0, ry = 0, rz = 0) {
   const m = new THREE.Mesh(

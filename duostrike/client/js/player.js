@@ -4,12 +4,13 @@
 // slide-jumping feel good. Sprint, slide, crouch, wall jump and coyote/buffer
 // windows are each isolated so they can be tuned (or removed) on their own.
 
-// Relative paths (not /shared/...) so this module imports cleanly in both the
-// browser and Node — the movement kit is covered by test/movement.test.js.
+// The #shared/ specifier resolves through package.json "imports" in Node and
+// through the import map in index.html in the browser, so this module loads
+// under both — the movement kit is covered by test/movement.test.js.
 import {
   MOVE, PLAYER_RADIUS, HEIGHT_STAND, HEIGHT_CROUCH, HEIGHT_SLIDE, ANIM,
-} from '../../shared/constants.js';
-import { collideMove, hasHeadroom, wallProbe } from '../../shared/collision.js';
+} from '#shared/constants.js';
+import { collideMove, hasHeadroom, wallProbe } from '#shared/collision.js';
 
 const LOOK_SCALE = 0.0022;
 const PITCH_LIMIT = Math.PI / 2 - 0.02;

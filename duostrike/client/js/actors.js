@@ -2,7 +2,7 @@
 // they differ by colour, scale and which animation state they are told to play.
 
 import * as THREE from 'three';
-import { ANIM } from '/shared/constants.js';
+import { ANIM } from '#shared/constants.js';
 
 const BOX = new THREE.BoxGeometry(1, 1, 1);
 
