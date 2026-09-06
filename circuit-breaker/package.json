@@ -1,0 +1,20 @@
+{
+  "name": "circuit-breaker",
+  "version": "1.0.0",
+  "description": "Circuit Breaker — a neon maze tower-defense where towers overheat and you decide when to push them.",
+  "type": "module",
+  "private": true,
+  "main": "server/index.js",
+  "imports": {
+    "#shared/*": "./shared/*"
+  },
+  "scripts": {
+    "start": "node server/index.js",
+    "dev": "node --watch server/index.js",
+    "test": "node test/grid.test.js && node test/balance.test.js && node test/sim.test.js"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "license": "ISC"
+}

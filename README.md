@@ -35,6 +35,23 @@ npm run dev
 
 Then open the local URL shown by Vite, usually <http://localhost:5173>.
 
+### Circuit Breaker
+
+`circuit-breaker/` is a neon maze tower defence. Packets walk from the left edge
+of a circuit board to your core; you cannot wall the route off, only bend it.
+Every tower builds heat as it fires and shuts down if you push it too far, and
+Overclock buys five seconds of doubled fire in exchange for a guaranteed
+shutdown afterwards.
+
+It has no dependencies, so there is nothing to install:
+
+```bash
+cd circuit-breaker
+npm start
+```
+
+Then open <http://localhost:3300>.
+
 ## Notes
 
 These games are experiments and may change over time. See each game's README

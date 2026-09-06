@@ -45,6 +45,18 @@ const games = {
     players: 'SOLO OR ONLINE',
     state: 'stopped', process: null, sessions: new Map(), lastActivity: 0, startPromise: null,
   },
+  'circuit-breaker': {
+    name: 'Circuit Breaker',
+    dir: path.join(root, 'circuit-breaker'),
+    port: 3203,
+    health: '/health',
+    description: 'A neon maze tower defence with overheating towers.',
+    blurb: 'Bend the route, then manage the heat. Every tower shuts down if you push it, and Overclock buys five seconds of doubled fire for a guaranteed shutdown after.',
+    art: '/assets/art/circuit-breaker.jpg',
+    tags: ['strategy', 'tower defence', 'solo'],
+    players: 'SOLO',
+    state: 'stopped', process: null, sessions: new Map(), lastActivity: 0, startPromise: null,
+  },
 };
 
 const slugOf = (game) => Object.keys(games).find((slug) => games[slug] === game);
