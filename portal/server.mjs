@@ -129,6 +129,14 @@ async function waitForHealth(game) {
   while (Date.now() < deadline) { if (await healthCheck(game)) return true; await new Promise((r) => setTimeout(r, 500)); }
   return false;
 }
+// Every game runs in its own process group. `npm start` wraps the real server
+// in one or more extra processes (npm, cross-env, tsx…), and a signal sent to npm
+// alone does not reliably reach the server underneath: it was being orphaned,
+// kept its port, and went on serving old code long after it was "stopped".
+// Signalling the group reaches every process in it.
+function signalGroup(pid, signal) {
+  try { process.kill(-pid, signal); return true; } catch { return false; }
+}
 async function startGame(game) {
   if (game.state === 'running') return;
   if (game.startPromise) return game.startPromise;
@@ -136,6 +144,7 @@ async function startGame(game) {
   game.startPromise = (async () => {
     const child = spawn('npm', ['start'], {
       cwd: game.dir, env: { ...process.env, PORT: String(game.port), NODE_ENV: 'production' }, stdio: ['ignore', 'pipe', 'pipe'],
+      detached: true,
     });
     game.process = child;
     child.stdout.on('data', (line) => process.stdout.write(`[${game.name}] ${line}`));
@@ -145,7 +154,7 @@ async function startGame(game) {
       console.log(`[${game.name}] exited (${signal || code || 0})`);
     });
     if (!await waitForHealth(game)) {
-      if (!child.killed) child.kill('SIGTERM');
+      signalGroup(child.pid, 'SIGTERM');
       throw new Error(`${game.name} did not pass its health check`);
     }
     game.state = 'running'; game.lastActivity = Date.now();
@@ -157,8 +166,12 @@ function stopGame(game) {
   const child = game.process; game.state = 'stopping';
   for (const [token, session] of game.sessions) finishSession(game, token, session);
   console.log(`[${game.name}] stopping after idle timeout`);
-  child.kill('SIGTERM');
-  setTimeout(() => { if (game.process === child && !child.killed) child.kill('SIGKILL'); }, 10_000).unref();
+  signalGroup(child.pid, 'SIGTERM');
+  // Whatever is still alive in the group ten seconds later is killed outright.
+  // This deliberately checks the group rather than npm: npm exiting while the
+  // server underneath carries on is the exact failure being guarded against.
+  const pid = child.pid;
+  setTimeout(() => signalGroup(pid, 'SIGKILL'), 10_000).unref();
 }
 setInterval(async () => {
   const now = Date.now();
