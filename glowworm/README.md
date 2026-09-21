@@ -20,9 +20,14 @@ Then open <http://localhost:3400> — in two windows to see each other.
 | Boost | Hold a mouse button, or Space / ↑ / W | Hold ⚡, or put a second finger down |
 
 Your own body never kills you; everyone else's does, and so does the red edge
-of the arena. Boosting costs length and drops it behind you as food, so a
-boosting worm is worth chasing. The arena is topped up with bots, so there is
-always something to play against — they step aside as people join.
+of the arena. Two worms can never take each other out: you only die if your
+head is in the body of a worm that is still alive, so in a head-on — or when
+two heads cross into each other's bodies — the smaller worm dies and the bigger
+one survives (a coin settles an exact tie).
+
+Boosting costs length and drops it behind you as food, so a boosting worm is
+worth chasing. Around thirty bots with deliberately stupid names keep the arena
+busy, and they step aside as people join.
 
 ## How it is built
 
@@ -30,7 +35,7 @@ always something to play against — they step aside as people join.
 shared/   rules and tuning, the binary wire protocol, a seeded RNG
 server/   the world simulation, bot AI, a spatial grid, and the socket server
 client/   canvas renderer, interpolation, input, and the DOM around it
-test/     206 assertions: protocol, simulation, client timing, input, end-to-end
+test/     227 assertions: protocol, simulation, client timing, input, end-to-end
 ```
 
 - **Server-authoritative.** Clients only ever send a heading and whether they

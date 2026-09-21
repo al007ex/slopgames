@@ -12,8 +12,8 @@ export const TICK_MS = 1000 / SIM_HZ;
 export const SEND_EVERY = 2;
 
 // ---- Arena -------------------------------------------------------------
-export const ARENA_RADIUS = 2400;
-// Positions travel as int16 at half-unit precision; ±2400 * 2 fits with room.
+export const ARENA_RADIUS = 2800;
+// Positions travel as int16 at half-unit precision; ±2800 * 2 fits with room.
 export const COORD_SCALE = 2;
 
 // ---- Snakes ------------------------------------------------------------
@@ -44,9 +44,9 @@ export const turnRateOf = (mass) => Math.max(1.9, 5.0 - Math.sqrt(mass) * 0.03);
 export const viewDiagonalOf = (mass) => Math.min(3600, 1500 + Math.sqrt(mass) * 14);
 
 // ---- Food --------------------------------------------------------------
-export const FOOD_TARGET = 1800;        // natural pellets kept on the board
-export const FOOD_MAX = 3600;           // hard ceiling, including death drops
-export const FOOD_SPAWN_PER_TICK = 4;
+export const FOOD_TARGET = 2600;        // natural pellets kept on the board
+export const FOOD_MAX = 5200;           // hard ceiling, including death drops
+export const FOOD_SPAWN_PER_TICK = 5;
 export const FOOD_DECAY_SECONDS = 75;   // dropped food only; natural food stays
 export const EAT_REACH = 14;            // the "magnet" beyond the head's edge
 export const foodRadius = (value) => 3.2 + Math.sqrt(value) * 2.4;
@@ -54,8 +54,8 @@ export const foodRadius = (value) => 3.2 + Math.sqrt(value) * 2.4;
 // ---- Population --------------------------------------------------------
 // Bots keep the arena alive when few people are playing and quietly make room
 // as people arrive.
-export const SNAKE_TARGET = 18;
-export const MIN_BOTS = 7;
+export const SNAKE_TARGET = 30;
+export const MIN_BOTS = 14;
 export const MAX_PLAYERS = 60;
 export const NAME_MAX = 16;
 
@@ -82,6 +82,8 @@ export const SKINS = [
   { name: 'Ember', body: '#ff5b3a', stripe: '#ffd23d', glow: '#ff6e6e', food: 9 },
 ];
 
+// Deliberately stupid. Bots should be fun to eat, and a leaderboard topped by
+// "extension cord" and "i paused my game" is half the charm.
 export const BOT_NAMES = [
   'noodle', 'Sir Wiggles', 'danger noodle', 'spaghetti', 'the long one',
   'ssssteve', 'hiss', 'glowstick', 'lil worm', 'big worm', 'slurp',
@@ -89,6 +91,23 @@ export const BOT_NAMES = [
   'boa', 'wiggle', 'nope rope', 'linguine', 'pasta', 'extension cord',
   'licorice', 'glowworm', 'mamba', 'kaa', 'sidewinder', 'hose',
   'ribbon', 'udon', 'shoelace',
+  'wet noodle', 'long boi', 'longer boi', 'smol boi', 'snek', 'snek snek',
+  'danger spaghet', 'spaghetto', 'pool noodle', 'jump rope', 'garden hose',
+  'phone charger', 'tangled earbuds', 'hdmi cable', 'usb-c', 'string cheese',
+  'gummy worm', 'hot dog', 'sausage', 'baguette', 'breadstick', 'churro',
+  'fettuccine', 'ramen', 'i am not a bot', 'totally human', 'real person',
+  'beep boop', 'no thoughts', 'brain empty', 'just vibing', 'pls no eat',
+  'free food', 'not food', 'definitely food', 'snacc', 'chonk', 'thicc worm',
+  'lag', 'wifi pls', 'afk', 'brb', 'gg ez', 'noob', 'pro gamer', 'tryhard',
+  'i paused my game', 'press f', 'yeet', 'bonk', 'no u', 'stonks', 'oops',
+  'my bad', 'whoops', 'ctrl alt defeat', 'name not found', 'loading...',
+  'unnamed worm 2', 'worm on a string', 'legally a snake', 'the intern',
+  'grandma', 'the floor', 'one pixel', 'tiny terror', 'slow and sad',
+  'xX_worm_Xx', 'dave', 'kevin', 'gary', 'potato', 'toaster', 'spoon',
+  'sock', 'wormy mcworm', 'slither mcgee', 'noodle arms', 'boneless',
+  'legs pending', 'confused tube', 'hungry tube', 'my own tail', 'dizzy',
+  'going left', 'u-turn', 'free hugs', 'bitey', 'nom nom', 'chompy',
+  'snaccident', 'wiggle wiggle', 'self-aware rope', 'long cat',
 ];
 
 // Control characters, zero-width marks and bidi overrides. The last two let a

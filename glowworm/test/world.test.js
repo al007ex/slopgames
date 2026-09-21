@@ -9,7 +9,7 @@ import { LEFT_GAME } from '../shared/protocol.js';
 import {
   SIM_HZ, ARENA_RADIUS, START_MASS, MIN_BOOST_MASS, BASE_SPEED, BOOST_SPEED, FOOD_TARGET,
   FOOD_MAX, FOOD_DECAY_SECONDS, SNAKE_TARGET, MIN_BOTS, DEATH_DROP_RATIO, SKINS,
-  segmentsOf, spacingOf, turnRateOf, widthOf,
+  segmentsOf, spacingOf, turnRateOf, widthOf, BOT_NAMES, NAME_MAX, cleanName,
 } from '../shared/rules.js';
 
 const seconds = (world, s, each) => {
@@ -146,12 +146,101 @@ section('Dying');
   seconds(world, 3, (w) => { coiler.targetAngle += 0.2; });
   ok(coiler.alive, 'your own body never kills you');
 }
+
+section('Two snakes can never kill each other');
 {
-  const world = quietWorld();
-  const a = place(world, { x: -60, y: 0, angle: 0, mass: 30 });
-  const b = place(world, { x: 60, y: 0, angle: Math.PI, mass: 30 });
-  seconds(world, 1);
-  ok(!a.alive && !b.alive, 'a head-on collision takes out both snakes');
+  // Resolve one instant of contact without moving anything, so each test sets
+  // up exactly the geometry it means.
+  const collide = (world) => { world.indexBodies(); return world.findCollisions(); };
+  const mutual = (deaths) => {
+    const killerOf = new Map(deaths.map(([snake, killer]) => [snake.id, killer]));
+    return deaths.some(([snake, killer]) => killer && killerOf.get(killer) === snake.id);
+  };
+
+  // Head-on between equals, from every direction and many seeds.
+  let bothDied = 0;
+  let neitherDied = 0;
+  let firstWon = 0;
+  let trials = 0;
+  for (let seed = 1; seed <= 24; seed++) {
+    for (let k = 0; k < 8; k++) {
+      const world = quietWorld(seed);
+      const angle = (k / 8) * Math.PI * 2;
+      // Heads 10 units apart: well inside the ~15-unit reach of two mass-30 heads.
+      const a = place(world, { x: Math.cos(angle) * -5, y: Math.sin(angle) * -5, angle, mass: 30 });
+      const b = place(world, { x: Math.cos(angle) * 5, y: Math.sin(angle) * 5, angle: angle + Math.PI, mass: 30 });
+      const deaths = collide(world);
+      const dead = new Set(deaths.map(([snake]) => snake));
+      trials++;
+      if (dead.has(a) && dead.has(b)) bothDied++;
+      if (!dead.has(a) && !dead.has(b)) neitherDied++;
+      if (!dead.has(a)) firstWon++;
+    }
+  }
+  eq(bothDied, 0, `a head-on between equals never kills both (${trials} head-ons)`);
+  eq(neitherDied, 0, 'and never kills neither — one of them always goes');
+  ok(firstWon > trials * 0.25 && firstWon < trials * 0.75, 'an exact tie is a fair coin, not whoever was stored first', `${firstWon} of ${trials}`);
+
+  {
+    const world = quietWorld();
+    const small = place(world, { x: -8, y: 0, angle: 0, mass: 40 });
+    const big = place(world, { x: 8, y: 0, angle: Math.PI, mass: 400 });
+    const deaths = collide(world);
+    eq(deaths.length, 1, 'a head-on between unequal snakes kills exactly one');
+    eq(deaths[0]?.[0], small, 'and it is the smaller one');
+    eq(deaths[0]?.[1], big.id, 'credited to the bigger one');
+  }
+  {
+    // Two snakes lying across each other, each head buried in the other's body.
+    const world = quietWorld();
+    const a = place(world, { x: 0, y: 0, angle: 0, mass: 120 });
+    const b = place(world, { x: -40, y: 0, angle: Math.PI, mass: 100 });
+    const deaths = collide(world);
+    eq(deaths.length, 1, 'two heads crossed into each other’s bodies: exactly one dies');
+    ok(!mutual(deaths), 'and nobody is credited with killing their own killer');
+    ok(a.alive !== false && deaths[0][0] === b, 'the smaller one');
+  }
+  {
+    // A runs into B at the same moment B runs into the long body of C.
+    const world = quietWorld();
+    const c = place(world, { x: 300, y: 300, angle: Math.PI / 2, mass: 900 });
+    const b = place(world, { x: 300, y: 0, angle: 0, mass: 200 });
+    const a = place(world, { x: 300 - spacingOf(200) * 6, y: 60, angle: -Math.PI / 2, mass: 60 });
+    const deaths = collide(world);
+    const dead = new Set(deaths.map(([snake]) => snake));
+    ok(dead.has(b) && deaths.find(([snake]) => snake === b)[1] === c.id, 'a snake that hits a living body dies');
+    ok(!dead.has(a), 'and a snake that only hit it in that same instant survives — it hit nothing that was still there');
+    ok(!dead.has(c), 'the body that did the killing is untouched');
+  }
+  {
+    // Three heads meeting at one point.
+    const world = quietWorld();
+    const snakes = [60, 90, 140].map((mass, i) => {
+      const angle = (i / 3) * Math.PI * 2;
+      return place(world, { x: Math.cos(angle + Math.PI) * -6, y: Math.sin(angle + Math.PI) * -6, angle, mass });
+    });
+    const deaths = collide(world);
+    const dead = new Set(deaths.map(([snake]) => snake));
+    ok(!mutual(deaths), 'a three-way pile-up still has no pair killing each other');
+    ok(!dead.has(snakes[2]), 'the biggest of the three survives it');
+    ok(deaths.length <= 2, 'and at most the other two die', `${deaths.length}`);
+  }
+  {
+    // A big crowd of bots, for a long time: count every mutual kill that ever happens.
+    let deaths = 0;
+    let mutualKills = 0;
+    for (const seed of [31, 32, 33, 34]) {
+      const world = new World({ seed });
+      seconds(world, 120, (w) => {
+        const batch = w.takeEvents().deaths;
+        deaths += batch.length;
+        const killerOf = new Map(batch.map((d) => [d.victim, d.killer]));
+        for (const d of batch) if (d.killer && killerOf.get(d.killer) === d.victim) mutualKills++;
+      });
+    }
+    ok(deaths > 40, 'eight minutes of crowded bot fighting', `${deaths} deaths`);
+    eq(mutualKills, 0, 'produces not a single pair of snakes killing each other');
+  }
 }
 {
   const world = quietWorld();
@@ -242,6 +331,21 @@ section('Bots');
   ok(wall <= deaths * 0.15, 'but rarely by driving into the wall', `${wall} of ${deaths}`);
   ok(peak > 600, 'some grow large enough to be worth hunting', `peak ${Math.round(peak)}`);
   ok(world.botsAlive >= SNAKE_TARGET - 2, 'dead bots are replaced', `${world.botsAlive} alive`);
+}
+
+section('Bot names');
+{
+  ok(BOT_NAMES.length >= SNAKE_TARGET * 3, 'there are plenty of names to go round', `${BOT_NAMES.length}`);
+  eq(new Set(BOT_NAMES).size, BOT_NAMES.length, 'no name is listed twice');
+  ok(BOT_NAMES.every((name) => [...name].length <= NAME_MAX), 'every name fits the name limit');
+  ok(BOT_NAMES.every((name) => cleanName(name) === name), 'and survives the same cleaning players’ names get');
+  const world = new World({ seed: 44 });
+  let clash = false;
+  seconds(world, 90, (w) => {
+    const names = [...w.snakes.values()].filter((snake) => snake.bot).map((snake) => snake.name);
+    if (new Set(names).size !== names.length) clash = true;
+  });
+  ok(!clash, 'two living bots never share a name');
 }
 
 section('Determinism and cost');
