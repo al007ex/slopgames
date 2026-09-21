@@ -20,6 +20,19 @@ const origin = process.env.SITE_ORIGIN || 'https://slopgames.al007ex.com';
 // One entry per game. `dir`, `port` and `health` drive the launcher; the rest is
 // presentation, so adding a game to the arcade means adding an object here.
 const games = {
+  glowworm: {
+    name: 'Glowworm',
+    dir: path.join(root, 'glowworm'),
+    port: 3204,
+    health: '/health',
+    description: 'A multiplayer neon snake game for desktop and mobile.',
+    blurb: 'Eat the light, cut other worms off and grow as long as you can. Live multiplayer in the slither.io mould, with mouse, keyboard or touch.',
+    art: '/assets/art/glowworm.jpg',
+    tags: ['multiplayer', 'io', 'snake'],
+    players: 'LIVE MULTIPLAYER',
+    featured: true,
+    state: 'stopped', process: null, sessions: new Map(), lastActivity: 0, startPromise: null,
+  },
   duostrike: {
     name: 'DuoStrike',
     dir: path.join(root, 'duostrike'),
@@ -30,7 +43,6 @@ const games = {
     art: '/assets/art/duostrike.jpg',
     tags: ['co-op', 'shooter', 'multiplayer'],
     players: '2 PLAYERS',
-    featured: true,
     state: 'stopped', process: null, sessions: new Map(), lastActivity: 0, startPromise: null,
   },
   'pixel-brawl': {
@@ -258,10 +270,13 @@ function homePage() {
   const entries = Object.entries(games);
   const featured = entries.find(([, game]) => game.featured)?.[1] || entries[0][1];
   const tags = ['all', ...new Set(entries.flatMap(([, game]) => game.tags))];
-  const description = 'Play free browser games on Slopgames — no download, no install. Launch DuoStrike or Pixel Brawl and play instantly.';
+  const description = 'Play free browser games on Slopgames — no download, no install. Launch Glowworm, DuoStrike, Pixel Brawl or Circuit Breaker and play instantly.';
   // The 2x2 featured tile only earns its space once there are enough games to
   // wrap around it; below that every tile stays the same size and fills the row.
   const mosaic = entries.length >= 5;
+  // Two or four games read best as full-width pairs; an odd handful keeps the
+  // auto-fitting row.
+  const layout = mosaic ? ' mosaic' : entries.length % 2 === 0 ? ' pairs' : '';
 
   return `<!doctype html><html lang="en"><head>${head({
     title: 'Slopgames — free browser games, no download',
@@ -290,7 +305,7 @@ function homePage() {
 <div class="section-head"><div><p class="eyebrow">PLAY INSTANTLY</p><h2>Top games right now</h2></div>
 <span class="count" id="result-count">${String(entries.length).padStart(2, '0')} GAMES</span></div>
 <div class="filters">${tags.map((tag, index) => `<button class="chip" data-tag="${tag}" aria-pressed="${index === 0}">${tag === 'all' ? 'All games' : escape(tag)}</button>`).join('')}</div>
-<div class="game-grid${mosaic ? ' mosaic' : ''}">${entries.map(([slug, game]) => gameCard(slug, game)).join('')}
+<div class="game-grid${layout}">${entries.map(([slug, game]) => gameCard(slug, game)).join('')}
 <p class="empty" id="no-results" hidden>No games match that search — try another word.</p></div>
 </section>
 
