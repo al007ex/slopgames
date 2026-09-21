@@ -6,21 +6,30 @@
 export const SIM_HZ = 30;
 export const SIM_DT = 1 / SIM_HZ;
 export const TICK_MS = 1000 / SIM_HZ;
-// Snapshots go out every other tick (15 Hz). The client interpolates between
-// them, so this trades a little latency for half the bandwidth — which is what
-// keeps the game comfortable on a phone connection.
-export const SEND_EVERY = 2;
+// Snapshots go out every tick (30 Hz). At 15 Hz a turning head was drawn as a
+// string of straight segments whose corners showed as a stutter; twice the
+// samples plus a curve through them makes it smooth. It costs roughly 15–20
+// KB/s per player, which a phone connection handles comfortably.
+export const SEND_EVERY = 1;
 
 // ---- Arena -------------------------------------------------------------
 export const ARENA_RADIUS = 2800;
 // Positions travel as int16 at half-unit precision; ±2800 * 2 fits with room.
 export const COORD_SCALE = 2;
+// Heads (and the camera focus) go at an eighth of a unit. The camera is locked
+// to your head, so any rounding in it moves the whole screen; at half a unit
+// that showed as a faint shimmer. ±2800 * 8 still fits an int16.
+export const HEAD_SCALE = 8;
 
 // ---- Snakes ------------------------------------------------------------
 export const START_MASS = 10;
 export const MIN_BOOST_MASS = 14;
 export const BASE_SPEED = 175;      // world units per second
 export const BOOST_SPEED = 380;
+// Speed eases towards its target rather than switching, so a boost surges in
+// and settles out instead of lurching. About 90% of the change lands in a
+// quarter of a second — quick enough to still feel instant to press.
+export const SPEED_EASE_SECONDS = 0.11;
 export const BOOST_DROP_SECONDS = 0.14;
 export const DEATH_DROP_RATIO = 0.75;
 // Collisions use slightly shrunken circles. Exact circles feel unfair — you

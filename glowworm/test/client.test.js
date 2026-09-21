@@ -2,7 +2,7 @@
 // look smooth. GameState never touches the DOM, so it runs here as-is.
 
 import { ok, eq, near, section, report } from './harness.js';
-import { GameState, INTERP_DELAY, EAT_ANIM_MS } from '../client/js/state.js';
+import { GameState, INTERP_DELAY, EAT_ANIM_MS, catmullRom } from '../client/js/state.js';
 import * as P from '../shared/protocol.js';
 import { TICK_MS } from '../shared/rules.js';
 
@@ -33,6 +33,82 @@ section('Interpolation');
 
   const later = state.frame(halfway - 50);
   ok(later.clock >= frame.clock, 'the render clock never runs backwards');
+}
+
+section('Turning is smooth');
+{
+  // A head circling at base speed, sampled once a tick as the server does and
+  // arriving with a steady 50 ms of latency. Frames are drawn every 4 ms.
+  const radius = 160;
+  const omega = 175 / radius;
+  const headAt = (tick) => {
+    const a = (tick * TICK_MS / 1000) * omega;
+    return [Math.cos(a) * radius, Math.sin(a) * radius];
+  };
+  /** `wire`: send through the real encoder (with its rounding) rather than exact values. */
+  const trace = (wire) => {
+    const state = new GameState();
+    let next = 0;
+    const heads = [];
+    for (let now = 0; now < 1600; now += 4) {
+      while (next * TICK_MS + 50 <= now) {
+        const [x, y] = headAt(next);
+        const body = { id: 1, flags: 0, angle: 0, mass: 40, points: [x, y, x - 1, y] };
+        if (wire) deliver(state, snapshot(next, [body], x), now);
+        else state.receive({ type: P.SERVER.SNAPSHOT, tick: next, cx: x, cy: y, snakes: [{ ...body, points: Float32Array.from(body.points) }] }, now);
+        next += 1;
+      }
+      const snake = state.frame(now).byId.get(1);
+      if (now > 400 && snake) heads.push({ x: snake.points[0], y: snake.points[1] });
+    }
+    return heads;
+  };
+  const worstTurnOf = (heads) => {
+    let worst = 0;
+    for (let i = 2; i < heads.length; i++) {
+      const a1 = Math.atan2(heads[i - 1].y - heads[i - 2].y, heads[i - 1].x - heads[i - 2].x);
+      const a2 = Math.atan2(heads[i].y - heads[i - 1].y, heads[i].x - heads[i - 1].x);
+      let d = Math.abs(a2 - a1);
+      if (d > Math.PI) d = Math.PI * 2 - d;
+      worst = Math.max(worst, d);
+    }
+    return worst;
+  };
+  const worstRadiusOf = (heads) => Math.max(...heads.map((h) => Math.abs(Math.hypot(h.x, h.y) - radius)));
+
+  const exact = trace(false);
+  const perSnapshot = omega * TICK_MS / 1000;       // how much a straight-line blend jerks at each snapshot
+  const perFrame = omega * 0.004;                   // how much it should turn per 4 ms frame
+  ok(worstTurnOf(exact) < perFrame * 2, 'the head turns a little every frame instead of jerking at each snapshot',
+    `worst ${worstTurnOf(exact).toFixed(4)} rad per frame (ideal ${perFrame.toFixed(4)}); straight lines jerk ${perSnapshot.toFixed(4)} at once`);
+  ok(worstRadiusOf(exact) < 0.01, 'and follows the true curve rather than cutting across it', `${worstRadiusOf(exact).toFixed(5)} units off`);
+
+  const wired = trace(true);
+  ok(worstRadiusOf(wired) < 0.1, 'through the real wire format the drawn head stays within a tenth of a unit of the truth',
+    `${worstRadiusOf(wired).toFixed(3)} units`);
+
+  near(catmullRom(0, 10, 20, 30, 0.5), 15, 1e-9, 'the curve reduces to a straight line when the motion is straight');
+  near(catmullRom(3, 7, 11, 2, 0), 7, 1e-9, 'and passes exactly through each snapshot');
+}
+
+section('The render clock eases corrections in');
+{
+  const state = new GameState();
+  // Snapshots on time, then the network suddenly gets 60 ms slower.
+  let now = 0;
+  const frames = [];
+  for (let tick = 0; tick < 120; tick++) {
+    const latency = tick < 45 ? 30 : 90;
+    const arrive = tick * TICK_MS + latency;
+    while (now < arrive) { frames.push({ now, clock: state.frame(now).clock }); now += 4; }
+    deliver(state, snapshot(tick, []), arrive);
+  }
+  const steps = frames.filter((f) => Number.isFinite(f.clock)).map((f, i, all) => (i ? f.clock - all[i - 1].clock : null)).filter((d) => d !== null);
+  ok(steps.every((d) => d >= 0), 'the clock never runs backwards');
+  ok(Math.max(...steps) <= 4 * 1.08 + 1e-6, 'and never jumps: it advances at most 8% faster than real time', `max step ${Math.max(...steps).toFixed(2)} ms per 4 ms frame`);
+  ok(Math.min(...steps.slice(20)) >= 4 * 0.92 - 1e-6, 'or stalls: at least 92% of real time', `min step ${Math.min(...steps.slice(20)).toFixed(2)}`);
+  const last = frames.at(-1);
+  near(last.clock, last.now - state.offset - INTERP_DELAY, 20, 'and has caught up with the slower network a second later');
 }
 
 section('Growth and disappearance');

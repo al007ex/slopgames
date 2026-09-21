@@ -35,21 +35,25 @@ busy, and they step aside as people join.
 shared/   rules and tuning, the binary wire protocol, a seeded RNG
 server/   the world simulation, bot AI, a spatial grid, and the socket server
 client/   canvas renderer, interpolation, input, and the DOM around it
-test/     227 assertions: protocol, simulation, client timing, input, end-to-end
+test/     241 assertions: protocol, simulation, client timing, input, end-to-end
 ```
 
 - **Server-authoritative.** Clients only ever send a heading and whether they
   are boosting; movement, eating and every collision are decided on the server,
   at 30 ticks a second.
-- **Binary and frugal.** Snapshots go out 15 times a second and carry only the
-  snakes on your screen. Body points travel as int8 offsets from the previous
-  point, quantised against the *reconstructed* point so rounding cannot build up
-  down a long tail — about two bytes a point. A spectator costs tens of KB/s.
-- **Smooth despite that.** The client renders about 100 ms in the past and
-  blends between the snapshots either side, locking its clock to the fastest
-  recent arrival so jitter does not show. Events (food eaten, deaths) are
-  tick-stamped and wait for that clock, so a pellet vanishes when the head that
-  ate it actually reaches it on screen.
+- **Binary and frugal.** Snapshots go out 30 times a second and carry only the
+  snakes on your screen. Heads travel at an eighth of a unit; body points as
+  int8 offsets from the previous point, quantised against the *reconstructed*
+  point so rounding cannot build up down a long tail — about two bytes a point.
+  A player costs roughly 25 KB/s.
+- **Smooth.** The client renders 100 ms in the past and runs a Catmull-Rom curve
+  through the snapshots around that moment, so a turning head never shows a
+  corner at each snapshot. Its clock runs at real speed and eases corrections
+  in (at most 8% fast or slow) instead of jumping. Speed eases on the server
+  when a boost starts or stops, and the glow, tail sparks, a slight camera
+  pull-back, new snakes appearing and dead ones dissolving are all eased too.
+  Events (food eaten, deaths) are tick-stamped and wait for the render clock, so
+  a pellet vanishes when the head that ate it actually reaches it on screen.
 - **Cheap to draw.** Each snake is one path stroked a few times — shadow,
   outline, body, bands, shine — rather than hundreds of circles, and pellets are
   pre-rendered glow sprites blended additively. That keeps a crowded screen at

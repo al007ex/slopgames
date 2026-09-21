@@ -3,7 +3,7 @@
 
 import { ok, eq, near, section, report } from './harness.js';
 import * as P from '../shared/protocol.js';
-import { NAME_MAX, COORD_SCALE, cleanName, spacingOf } from '../shared/rules.js';
+import { NAME_MAX, COORD_SCALE, HEAD_SCALE, cleanName, spacingOf } from '../shared/rules.js';
 
 const TAU = Math.PI * 2;
 const angleError = (a, b) => Math.abs(((a - b) % TAU + TAU + Math.PI) % TAU - Math.PI);
@@ -51,6 +51,11 @@ section('Snapshots');
   ok(worstError(message.snakes[1].points, snakes[1].points) <= precision,
     'a 144-point body is just as accurate at the tail — error does not accumulate',
     `worst ${worstError(message.snakes[1].points, snakes[1].points)}`);
+
+  ok(Math.abs(message.snakes[1].points[0] - snakes[1].points[0]) <= 0.5 / HEAD_SCALE + 1e-6
+    && Math.abs(message.snakes[1].points[1] - snakes[1].points[1]) <= 0.5 / HEAD_SCALE + 1e-6,
+    'heads travel at an eighth of a unit — the camera follows them, so they get the precision');
+  near(message.cx, 100.3, 0.5 / HEAD_SCALE + 1e-6, 'and so does the camera focus');
 
   const assembled = P.assembleSnapshot(987654, 100.3, -40.2, snakes.map(P.encodeSnakeBlock));
   ok(assembled.length === bytes.length && assembled.every((b, i) => b === bytes[i]), 'splicing pre-encoded blocks gives identical bytes');

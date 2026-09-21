@@ -3,7 +3,7 @@
 // sockets, which is what lets the tests drive it directly.
 
 import {
-  SIM_HZ, SIM_DT, ARENA_RADIUS, START_MASS, MIN_BOOST_MASS, BASE_SPEED, BOOST_SPEED,
+  SIM_HZ, SIM_DT, ARENA_RADIUS, START_MASS, MIN_BOOST_MASS, BASE_SPEED, BOOST_SPEED, SPEED_EASE_SECONDS,
   BOOST_DROP_SECONDS, DEATH_DROP_RATIO, HIT_FORGIVENESS, boostBurn, widthOf, spacingOf,
   segmentsOf, turnRateOf, FOOD_TARGET, FOOD_MAX, FOOD_SPAWN_PER_TICK, FOOD_DECAY_SECONDS,
   EAT_REACH, foodRadius, SNAKE_TARGET, MIN_BOTS, PALETTE, SKINS, BOT_NAMES,
@@ -107,7 +107,7 @@ export class World {
     }
     const snake = {
       id, name, skin: clamp(skin | 0, 0, SKINS.length - 1), bot, alive: true,
-      mass, angle, targetAngle: angle, boost: false, boosting: false,
+      mass, angle, targetAngle: angle, boost: false, boosting: false, speed: BASE_SPEED,
       points, width: widthOf(mass), spacing,
       dropTimer: 0, dropBank: 0, kills: 0, bornTick: this.tick, bestRank: 0,
       brain: bot ? makeBrain(this.rng) : null, owner: null,
@@ -239,10 +239,11 @@ export class World {
     snake.angle = wrapAngle(snake.angle + clamp(diff, -turn, turn));
 
     snake.boosting = snake.boost && snake.mass > MIN_BOOST_MASS;
-    const speed = snake.boosting ? BOOST_SPEED : BASE_SPEED;
+    const target = snake.boosting ? BOOST_SPEED : BASE_SPEED;
+    snake.speed += (target - snake.speed) * (1 - Math.exp(-SIM_DT / SPEED_EASE_SECONDS));
     const p = snake.points;
-    p[0] += Math.cos(snake.angle) * speed * SIM_DT;
-    p[1] += Math.sin(snake.angle) * speed * SIM_DT;
+    p[0] += Math.cos(snake.angle) * snake.speed * SIM_DT;
+    p[1] += Math.sin(snake.angle) * snake.speed * SIM_DT;
 
     if (snake.boosting) {
       // Boosting is paid for in length, and the length is left behind as food —

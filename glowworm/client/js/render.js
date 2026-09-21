@@ -103,12 +103,14 @@ function tracePath(path, points, count) {
  * Draw one snake in world space. Exported so the menu can draw its preview
  * with exactly the same code the game uses.
  */
-export function drawSnake(ctx, points, count, width, skin, { angle, boosting = false, time = 0 }) {
-  if (count < 2) return;
+export function drawSnake(ctx, points, count, width, skin, { angle, boost = 0, time = 0, alpha = 1 }) {
+  if (count < 2 || alpha <= 0) return;
   const w = width;
   const path = new Path2D();
   const length = tracePath(path, points, count);
 
+  ctx.save();
+  ctx.globalAlpha = alpha;
   ctx.lineCap = 'round';
   ctx.lineJoin = 'round';
 
@@ -120,16 +122,18 @@ export function drawSnake(ctx, points, count, width, skin, { angle, boosting = f
   ctx.stroke(path);
   ctx.restore();
 
-  if (boosting) {
-    const pulse = 0.72 + 0.28 * Math.sin(time * 20);
+  if (boost > 0.01) {
+    // The glow swells in and out with the boost level rather than switching,
+    // so starting and stopping a boost reads as a surge, not a flicker.
+    const pulse = 0.78 + 0.22 * Math.sin(time * 18);
     ctx.save();
     ctx.globalCompositeOperation = 'lighter';
     ctx.strokeStyle = skin.glow;
-    ctx.globalAlpha = 0.13 * pulse;
-    ctx.lineWidth = w * 2.6;
+    ctx.globalAlpha = alpha * 0.14 * pulse * boost;
+    ctx.lineWidth = w * (1.3 + 1.4 * boost);
     ctx.stroke(path);
-    ctx.globalAlpha = 0.2 * pulse;
-    ctx.lineWidth = w * 1.65;
+    ctx.globalAlpha = alpha * 0.22 * pulse * boost;
+    ctx.lineWidth = w * (1.1 + 0.6 * boost);
     ctx.stroke(path);
     ctx.restore();
   }
@@ -199,6 +203,7 @@ export function drawSnake(ctx, points, count, width, skin, { angle, boosting = f
     ctx.arc(ex + dx * w * 0.075 - w * 0.035, ey + dy * w * 0.075 - w * 0.04, w * 0.035, 0, TAU);
     ctx.fill();
   }
+  ctx.restore();
 }
 
 export class Renderer {
@@ -213,6 +218,8 @@ export class Renderer {
     this.camera = { x: 0, y: 0 };
     this.pan = null;
     this.particles = [];
+    this.visuals = new Map();   // id -> { boost, born, seen, sparks }: eased per-snake effects
+    this.ghosts = [];           // dead snakes fading out
     this.hexPattern = this.ctx.createPattern(makeHexTile(), 'repeat');
     this.sprites = PALETTE.map(makeGlowSprite);
     this.lastTime = 0;
@@ -276,10 +283,16 @@ export class Renderer {
     return { x: this.camera.x + (x - this.width / 2) / this.scale, y: this.camera.y + (y - this.height / 2) / this.scale };
   }
 
-  /** A burst of sparks along a body, for a death. */
-  burst(points, skinIndex) {
+  /** How boosted a snake currently looks, 0–1 — eased, so the camera can follow it too. */
+  boostLevel(id) {
+    return this.visuals.get(id)?.boost ?? 0;
+  }
+
+  /** A death: the body swells and fades out while sparks fly off it. */
+  burst(points, skinIndex, mass = 10) {
     if (!points) return;
     const skin = SKINS[skinIndex] || SKINS[0];
+    this.ghosts.push({ points, count: points.length / 2, width: widthOf(mass), skin, age: 0 });
     const count = points.length / 2;
     const stride = Math.max(1, Math.floor(count / 70));
     for (let i = 0; i < count && this.particles.length < 1200; i += stride) {
@@ -319,9 +332,12 @@ export class Renderer {
     this.drawEdge(x0, y0, x1, y1, time);
     this.drawFood(state, frame, x0 - 60, y0 - 60, x1 + 60, y1 + 60, time);
 
+    this.drawGhosts(dt, time);
+
     // Small under big, and your own snake on top of everything.
     const order = frame.snakes.slice().sort((a, b) => (a.you - b.you) || (a.mass - b.mass));
     for (const snake of order) {
+      const visual = this.visualOf(snake, time, dt);
       const width = widthOf(snake.mass);
       // Cheap cull: skip snakes whose head and tail are both far off screen.
       const p = snake.points;
@@ -329,8 +345,17 @@ export class Renderer {
       const margin = width + 400;
       if ((p[0] < x0 - margin && p[tail] < x0 - margin) || (p[0] > x1 + margin && p[tail] > x1 + margin)
         || (p[1] < y0 - margin && p[tail + 1] < y0 - margin) || (p[1] > y1 + margin && p[tail + 1] > y1 + margin)) continue;
-      drawSnake(ctx, p, snake.count, width, SKINS[snake.info.skin] || SKINS[0], { angle: snake.angle, boosting: snake.boosting, time });
+      const skin = SKINS[snake.info.skin] || SKINS[0];
+      if (visual.boost > 0.05) this.sparkTail(snake, skin, visual, width, dt);
+      drawSnake(ctx, p, snake.count, width, skin, {
+        angle: snake.angle,
+        boost: visual.boost,
+        time,
+        // New arrivals fade in over a third of a second instead of popping in.
+        alpha: Math.min(1, (time - visual.born) / 0.33),
+      });
     }
+    for (const [id, visual] of this.visuals) if (time - visual.seen > 2) this.visuals.delete(id);
 
     this.drawParticles(dt);
 
@@ -349,6 +374,61 @@ export class Renderer {
         ctx.globalAlpha = 1;
       }
     }
+  }
+
+  /** Per-snake eased state: how boosted it looks and when it first appeared. */
+  visualOf(snake, time, dt) {
+    let visual = this.visuals.get(snake.id);
+    if (!visual) {
+      visual = { boost: snake.boosting ? 1 : 0, born: time, seen: time, sparks: 0 };
+      this.visuals.set(snake.id, visual);
+    }
+    // ~90% of the way in a fifth of a second: quick, but visibly a transition.
+    const target = snake.boosting ? 1 : 0;
+    visual.boost += (target - visual.boost) * (1 - Math.exp(-dt / 0.085));
+    visual.seen = time;
+    return visual;
+  }
+
+  /** Sparks streaming off the tail of a boosting snake. */
+  sparkTail(snake, skin, visual, width, dt) {
+    const p = snake.points;
+    const tail = (snake.count - 1) * 2;
+    const before = Math.max(0, tail - 4);
+    let bx = p[tail] - p[before];
+    let by = p[tail + 1] - p[before + 1];
+    const len = Math.hypot(bx, by) || 1;
+    bx /= len;
+    by /= len;
+    visual.sparks += dt * 55 * visual.boost;
+    while (visual.sparks >= 1 && this.particles.length < 1400) {
+      visual.sparks -= 1;
+      const spread = (Math.random() - 0.5) * 1.1;
+      const speed = 50 + Math.random() * 110;
+      const cos = Math.cos(spread);
+      const sin = Math.sin(spread);
+      this.particles.push({
+        x: p[tail] + (Math.random() - 0.5) * width * 0.5,
+        y: p[tail + 1] + (Math.random() - 0.5) * width * 0.5,
+        vx: (bx * cos - by * sin) * speed,
+        vy: (bx * sin + by * cos) * speed,
+        life: 0, max: 0.28 + Math.random() * 0.3,
+        size: width * (0.08 + Math.random() * 0.1), colour: Math.random() < 0.6 ? skin.glow : '#ffffff',
+      });
+    }
+    if (visual.sparks > 1) visual.sparks = 0;
+  }
+
+  drawGhosts(dt, time) {
+    if (!this.ghosts.length) return;
+    for (const ghost of this.ghosts) {
+      ghost.age += dt;
+      const k = Math.min(1, ghost.age / 0.42);
+      drawSnake(this.ctx, ghost.points, ghost.count, ghost.width * (1 + 0.35 * k), ghost.skin, {
+        angle: 0, boost: 1 - k, time, alpha: (1 - k) ** 2,
+      });
+    }
+    this.ghosts = this.ghosts.filter((ghost) => ghost.age < 0.42);
   }
 
   drawEdge(x0, y0, x1, y1, time) {

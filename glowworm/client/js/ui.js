@@ -218,7 +218,7 @@ export class UI {
       points[i * 2 + 1] = y;
     }
     const angle = Math.atan2(points[1] - points[3], points[0] - points[2]);
-    drawSnake(g, points, count, w, SKINS[this.skin], { angle, boosting: false, time: t });
+    drawSnake(g, points, count, w, SKINS[this.skin], { angle, time: t });
   }
 
   // ---- notices ---------------------------------------------------------

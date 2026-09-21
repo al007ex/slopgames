@@ -103,15 +103,25 @@ section('Boosting');
   const cruiser = place(world, { x: -1000, y: 600, angle: 0, mass: 200 });
   booster.boost = true;
   world.takeEvents();
+  world.step();
+  ok(booster.speed > BASE_SPEED && booster.speed < BOOST_SPEED, 'a boost surges in over a few ticks rather than switching instantly',
+    `${booster.speed.toFixed(1)} after one tick`);
+  seconds(world, 0.5);
   const x0 = head(booster).x;
-  seconds(world, 1);
-  near(head(booster).x - x0, BOOST_SPEED, 1, 'boosting moves at boost speed');
+  seconds(world, 0.5);
+  near((head(booster).x - x0) * 2, BOOST_SPEED, 2, 'and settles at full boost speed within half a second');
   ok(booster.mass < cruiser.mass, 'boosting burns mass');
   const drops = world.takeEvents().foodAdded;
   ok(drops.length > 0, 'and leaves a trail of food behind');
   ok(drops.every((f) => f.color === SKINS[booster.skin].food), 'in the snake’s own colour');
   const dropped = drops.reduce((sum, f) => sum + f.value, 0);
   ok(dropped <= 200 - booster.mass + 1e-6 && dropped > (200 - booster.mass) * 0.5, 'the trail is worth the mass that was burned');
+
+  booster.boost = false;
+  world.step();
+  ok(booster.speed < BOOST_SPEED && booster.speed > BASE_SPEED, 'letting go eases back down too');
+  seconds(world, 1);
+  near(booster.speed, BASE_SPEED, 0.5, 'to cruising speed');
 
   const tiny = place(world, { x: 0, y: -900, angle: 0, mass: MIN_BOOST_MASS - 1 });
   tiny.boost = true;

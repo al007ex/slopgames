@@ -143,7 +143,7 @@ try {
   const counter = await connect(port);
   await wait(1100);
   const snaps = ofType(counter, P.SERVER.SNAPSHOT).length;
-  ok(snaps >= 12 && snaps <= 17, 'snapshots arrive at about 15 a second', `${snaps} in 1.1 s`);
+  ok(snaps >= 29 && snaps <= 36, 'snapshots arrive about 30 times a second', `${snaps} in 1.1 s`);
   let bytes = 0;
   const started = Date.now();
   counter.ws.on('message', (data) => { bytes += data.byteLength; });
