@@ -16,9 +16,9 @@ import { Actor } from './actors.js';
 import {
   WEAPONS, WEAPON_ORDER, ENEMY_TYPES, COSMETICS, FOV, ANIM,
   CLIENT_SEND_HZ, MAX_HP,
-} from '/shared/constants.js';
-import { LEVELS, TUTORIAL_STEPS, QUEST_TEXT } from '/shared/levels.js';
-import { buildWorld, setGate, raycastWorld, rayAABB, dist3D } from '/shared/collision.js';
+} from '#shared/constants.js';
+import { LEVELS, TUTORIAL_STEPS, QUEST_TEXT } from '#shared/levels.js';
+import { buildWorld, setGate, raycastWorld, rayAABB, dist3D } from '#shared/collision.js';
 
 const $ = (id) => document.getElementById(id);
 

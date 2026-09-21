@@ -2,7 +2,7 @@
 // Nothing here decides anything — it renders whatever state it is handed.
 
 import * as THREE from 'three';
-import { COSMETICS, MAX_HP } from '/shared/constants.js';
+import { COSMETICS, MAX_HP } from '#shared/constants.js';
 
 const $ = (id) => document.getElementById(id);
 

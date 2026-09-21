@@ -1,0 +1,78 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+<title>CIRCUIT BREAKER — neon maze tower defence</title>
+<meta name="description" content="Build a maze of overheating towers and stop the packets before they reach the core. 25 waves, 5 towers, one panic button." />
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect width='32' height='32' rx='7' fill='%2306070d'/><path d='M17 4 8 18h6l-1 10 9-14h-6z' fill='%23d9ff55'/></svg>" />
+<link rel="stylesheet" href="./css/style.css" />
+<!-- Points the #shared/ specifier at the modules the server exposes on /shared/.
+     Node resolves the same specifier through package.json "imports", so the
+     simulation loads unchanged in the browser and in the tests. -->
+<script type="importmap">
+{ "imports": { "#shared/": "./shared/" } }
+</script>
+</head>
+<body>
+
+<div id="app">
+  <header class="hud">
+    <div class="brand">CIRCUIT<span>BREAKER</span></div>
+    <div class="stats">
+      <div class="stat integrity"><b id="stat-integrity">20</b><span>CORE</span></div>
+      <div class="stat"><b id="stat-credits">220</b><span>CREDITS</span></div>
+      <div class="stat"><b id="stat-wave">1/25</b><span>WAVE</span></div>
+      <div class="stat"><b id="stat-score">0</b><span>SCORE</span></div>
+    </div>
+    <div class="phase">
+      <span id="phase-label">BUILD</span>
+      <button id="rush" class="ghost">Send wave <em id="rush-bonus"></em></button>
+    </div>
+  </header>
+
+  <main class="board-wrap">
+    <canvas id="board" aria-label="Circuit board"></canvas>
+    <div id="toast" class="toast" hidden></div>
+  </main>
+
+  <aside class="panel">
+    <h2>Towers</h2>
+    <div id="shop" class="shop"></div>
+
+    <div id="selection" class="selection" hidden>
+      <h3 id="sel-name">—</h3>
+      <p id="sel-blurb"></p>
+      <dl id="sel-stats"></dl>
+      <div class="heat"><i id="sel-heat"></i></div>
+      <div class="sel-actions">
+        <button id="sel-upgrade">Upgrade</button>
+        <button id="sel-overclock" class="accent">Overclock</button>
+        <button id="sel-sell" class="ghost">Sell</button>
+      </div>
+    </div>
+
+    <div class="spacer"></div>
+
+    <button id="surge" class="surge">SURGE <em id="surge-state">READY</em></button>
+    <p class="hint">Click a cell to build · <kbd>1</kbd>–<kbd>5</kbd> pick a tower · <kbd>Esc</kbd> cancel · <kbd>Space</kbd> send wave · <kbd>Q</kbd> surge</p>
+  </aside>
+</div>
+
+<div id="overlay" class="overlay">
+  <div class="overlay-card">
+    <p class="eyebrow" id="ov-kicker">INCOMING</p>
+    <h1 id="ov-title">CIRCUIT BREAKER</h1>
+    <p id="ov-text">Packets enter on the left and walk to your core. Build towers to make the walk long and the trip expensive — you can never wall the route off completely, only bend it.</p>
+    <div id="ov-scoreboard" class="scoreboard" hidden></div>
+    <div id="ov-name-row" class="name-row" hidden>
+      <input id="ov-name" maxlength="14" placeholder="Your name" autocomplete="off" />
+      <button id="ov-submit">Save score</button>
+    </div>
+    <button id="ov-action" class="primary">Start defending</button>
+  </div>
+</div>
+
+<script type="module" src="./js/main.js"></script>
+</body>
+</html>

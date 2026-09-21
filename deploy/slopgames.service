@@ -1,0 +1,17 @@
+[Unit]
+Description=Slopgames portal and on-demand game launcher
+After=network.target
+
+[Service]
+Type=simple
+User=root
+WorkingDirectory=/root/slopgames/portal
+EnvironmentFile=-/etc/slopgames/portal.env
+ExecStart=/usr/bin/node server.mjs
+Restart=on-failure
+RestartSec=3
+KillMode=control-group
+TimeoutStopSec=20
+
+[Install]
+WantedBy=multi-user.target

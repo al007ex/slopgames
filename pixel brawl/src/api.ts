@@ -25,6 +25,7 @@ export interface Reward {
 }
 
 const TOKEN_KEY = 'pixelbrawl.token';
+const API_BASE = import.meta.env.BASE_URL.replace(/\/$/, '');
 
 export function getToken(): string {
   return localStorage.getItem(TOKEN_KEY) ?? '';
@@ -46,17 +47,17 @@ async function req<T>(path: string, opts: RequestInit = {}): Promise<T> {
 
 export const api = {
   register: (name: string, password: string) =>
-    req<{ token: string; profile: Profile }>('/api/register', { method: 'POST', body: JSON.stringify({ name, password }) }),
+    req<{ token: string; profile: Profile }>(`${API_BASE}/api/register`, { method: 'POST', body: JSON.stringify({ name, password }) }),
   login: (name: string, password: string) =>
-    req<{ token: string; profile: Profile }>('/api/login', { method: 'POST', body: JSON.stringify({ name, password }) }),
-  profile: () => req<{ profile: Profile }>('/api/profile'),
-  select: (brawler: string) => req<{ profile: Profile }>('/api/select', { method: 'POST', body: JSON.stringify({ brawler }) }),
-  upgrade: (brawler: string) => req<{ profile: Profile }>('/api/upgrade', { method: 'POST', body: JSON.stringify({ brawler }) }),
+    req<{ token: string; profile: Profile }>(`${API_BASE}/api/login`, { method: 'POST', body: JSON.stringify({ name, password }) }),
+  profile: () => req<{ profile: Profile }>(`${API_BASE}/api/profile`),
+  select: (brawler: string) => req<{ profile: Profile }>(`${API_BASE}/api/select`, { method: 'POST', body: JSON.stringify({ brawler }) }),
+  upgrade: (brawler: string) => req<{ profile: Profile }>(`${API_BASE}/api/upgrade`, { method: 'POST', body: JSON.stringify({ brawler }) }),
   buy: (item: string) =>
-    req<{ rewards: Reward[]; profile: Profile }>('/api/shop/buy', { method: 'POST', body: JSON.stringify({ item }) }),
-  shop: () => req<{ items: any[] }>('/api/shop'),
-  road: () => req<{ stops: any[] }>('/api/road'),
-  claimRoad: () => req<{ rewards: Reward[]; profile: Profile }>('/api/road/claim', { method: 'POST' }),
-  leaderboard: () => req<{ rows: any[]; online: number }>('/api/leaderboard'),
-  status: () => req<{ online: number; inQueue: number; matches: number; accounts: number }>('/api/status'),
+    req<{ rewards: Reward[]; profile: Profile }>(`${API_BASE}/api/shop/buy`, { method: 'POST', body: JSON.stringify({ item }) }),
+  shop: () => req<{ items: any[] }>(`${API_BASE}/api/shop`),
+  road: () => req<{ stops: any[] }>(`${API_BASE}/api/road`),
+  claimRoad: () => req<{ rewards: Reward[]; profile: Profile }>(`${API_BASE}/api/road/claim`, { method: 'POST' }),
+  leaderboard: () => req<{ rows: any[]; online: number }>(`${API_BASE}/api/leaderboard`),
+  status: () => req<{ online: number; inQueue: number; matches: number; accounts: number }>(`${API_BASE}/api/status`),
 };

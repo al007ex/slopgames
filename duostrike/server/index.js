@@ -20,7 +20,7 @@ const io = new Server(server, { cors: { origin: '*' } });
 app.use('/', express.static(path.join(ROOT, 'client')));
 app.use('/shared', express.static(path.join(ROOT, 'shared')));
 app.use('/vendor', express.static(path.join(ROOT, 'node_modules', 'three', 'build')));
-app.get('/health', (_req, res) => res.json({ ok: true, rooms: registry.rooms.size }));
+app.get('/health', (_req, res) => res.json({ ok: true, rooms: registry.rooms.size, connections: io.engine.clientsCount }));
 
 const registry = new RoomRegistry(io);
 

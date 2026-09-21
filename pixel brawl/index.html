@@ -23,5 +23,8 @@
       <div id="overlays"></div>
     </div>
     <script type="module" src="/src/main.ts"></script>
+    <script>
+      setInterval(() => fetch('/api/games/pixel-brawl/heartbeat', { method: 'POST', credentials: 'same-origin' }).catch(() => {}), 25000);
+    </script>
   </body>
 </html>

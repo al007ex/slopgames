@@ -30,7 +30,8 @@ export class Net {
   private open() {
     if (this.ws && (this.ws.readyState === WebSocket.OPEN || this.ws.readyState === WebSocket.CONNECTING)) return;
     const proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
-    const url = `${proto}//${location.host}/ws`;
+    const base = import.meta.env.BASE_URL.replace(/\/$/, '');
+    const url = `${proto}//${location.host}${base}/ws`;
     try {
       this.ws = new WebSocket(url);
     } catch {
