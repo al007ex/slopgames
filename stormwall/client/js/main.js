@@ -244,6 +244,8 @@ class App {
       case 'match':
         if (this.game.freshWorld(msg.id)) { this.fillRenderers(); this.loot.clear(); this.storm.clear(); }
         this.flow.reset();
+        this.killTally = new Map();
+        this.damageDealt = 0;
         this.showQueue(false);
         this.game.start(msg);
         this.state = 'match';
@@ -267,7 +269,7 @@ class App {
         this.updateInventory(msg);
         this.loadout.sync(msg);
         break;
-      case 'hit': this.loadout.onHit(msg); break;
+      case 'hit': this.loadout.onHit(msg); this.damageDealt = (this.damageDealt || 0) + msg.dmg; break;
       case 'storm': this.storm.set(msg); break;
       case 'phase': this.flow.onPhase(msg); break;
       case 'alive': this.flow.onAlive(msg); break;
@@ -388,6 +390,7 @@ class App {
     this.shotFx.update(dt);
     this.loot.frame(dt, this.gfx.camera.position, pos);
     this.updatePrompt(pos);
+    this.updateScoreboard();
     this.storm.frame(dt, pos);
     this.map.frame(pos, this.yaw, this.storm.state, this.teammateMarks?.() || []);
 
@@ -481,7 +484,27 @@ class App {
     }
   }
 
+  /** Hold Tab: players left, your match so far, and who is running up the eliminations. */
+  updateScoreboard() {
+    const el = $('scoreboard');
+    const show = this.input.held('scoreboard') && this.state === 'match';
+    el.hidden = !show;
+    if (!show) return;
+    const me = this.game.me;
+    const top = [...(this.killTally || new Map())].sort((a, b) => b[1] - a[1]).slice(0, 5);
+    const name = (id) => esc(this.game.roster.get(id)?.name || '???');
+    el.innerHTML = `<h3>${esc((this.game.mode || '').toUpperCase())}</h3>`
+      + `<div class="row"><span>Players left</span><b>${this.flow.alive || '—'}</b></div>`
+      + `<div class="row"><span>Your eliminations</span><b>${this.flow.kills}</b></div>`
+      + `<div class="row"><span>Damage you have dealt</span><b>${Math.round(this.damageDealt || 0)}</b></div>`
+      + (top.length ? `<small>MOST ELIMINATIONS</small>${top.map(([id, n]) => `<div class="row ${id === me?.id ? 'me' : ''}"><span>${name(id)}</span><b>${n}</b></div>`).join('')}` : '');
+  }
+
   addFeed(msg) {
+    if (msg.killer && msg.killer !== msg.victim) {
+      this.killTally = this.killTally || new Map();
+      this.killTally.set(msg.killer, (this.killTally.get(msg.killer) || 0) + 1);
+    }
     const name = (id) => this.game.roster.get(id)?.name || '???';
     const li = document.createElement('li');
     const how = msg.cause === 'fall' ? 'fell to their death' : msg.cause === 'storm' ? 'was lost to the storm' : msg.cause === 'quit' ? 'left the match' : null;

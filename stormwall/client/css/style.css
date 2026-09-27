@@ -154,3 +154,9 @@ button { font: inherit; cursor: pointer; }
 .res-stats dt { font-size: 12px; color: var(--muted); }
 .res-stats dd { margin: 4px 0 0; font: italic 900 24px var(--display); }
 .res-xp { color: #9fd8ff; font-weight: 700; min-height: 18px; }
+.scoreboard { position: absolute; left: 50%; top: 14%; transform: translateX(-50%); min-width: 340px; background: rgba(8, 12, 22, 0.86); border: 1px solid var(--line); border-radius: 14px; padding: 16px 20px; font: 600 14px var(--body); }
+.scoreboard h3 { margin: 0 0 10px; font: italic 900 20px var(--display); }
+.scoreboard .row { display: flex; justify-content: space-between; gap: 20px; padding: 4px 0; border-bottom: 1px solid rgba(255,255,255,0.06); }
+.scoreboard .row b { font: italic 900 16px var(--display); }
+.scoreboard .me { color: var(--gold); }
+.scoreboard small { display: block; margin: 12px 0 4px; color: var(--muted); letter-spacing: 1px; font-size: 11px; }

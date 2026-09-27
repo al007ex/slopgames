@@ -15,6 +15,8 @@ export const AUTO_PICKUP = 1.5;
 const GRID = 16;
 const MATS = { wood: 0, stone: 1, metal: 2 };
 
+export const DROP_MAT_CAP = 300;          // materials dropped on death, per kind
+
 export const INTERACT_ITEM = 1;
 export const INTERACT_CHEST = 2;
 export const INTERACT_REVIVE = 3;
@@ -167,6 +169,28 @@ export const lootMethods = {
     if (!c.box) p.chests = (p.chests || 0) + 1;
     this.onChestOpened?.(p, c);
     return true;
+  },
+
+  /**
+   * Everything an eliminated player carried, in a pile where they fell: every
+   * weapon and consumable, all their ammo, and their materials up to a cap.
+   */
+  dropLootPile(p) {
+    const drops = [];
+    for (let i = 0; i < p.inv.length; i++) if (p.inv[i]) { drops.push({ ...p.inv[i] }); p.inv[i] = null; }
+    for (const [type, n] of Object.entries(p.ammo)) if (n > 0) { drops.push({ key: type, count: n }); p.ammo[type] = 0; }
+    ['wood', 'stone', 'metal'].forEach((key, i) => {
+      const n = Math.min(DROP_MAT_CAP, p.mats[i]);
+      if (n > 0) drops.push({ key, count: n });
+      p.mats[i] = 0;
+    });
+    const { x, y, z } = p.move;
+    drops.forEach((item, i) => {
+      const a = (i / Math.max(1, drops.length)) * Math.PI * 2, r = drops.length > 1 ? 0.9 + (i % 2) * 0.5 : 0;
+      this.dropItem(item, x + Math.cos(a) * r, y + 0.05, z + Math.sin(a) * r);
+    });
+    p.invDirty = true;
+    return drops.length;
   },
 
   dropSlot(p, slot) {

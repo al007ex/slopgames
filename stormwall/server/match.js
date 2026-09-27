@@ -229,6 +229,8 @@ export class Match {
     if (this.noDamage && d.kind !== 'storm') return 0;          // the pre-game island
     let amount = d.amount;
     const shieldBefore = p.shield;
+    // What this hit actually takes off: overkill does not count as damage dealt.
+    const effective = Math.min(d.amount, (d.kind === 'fall' ? 0 : p.shield) + Math.max(0, p.hp));
     // Shields soak damage first — except falling, which only ever hurts health.
     if (d.kind !== 'fall' && p.shield > 0) {
       const soaked = Math.min(p.shield, amount);
@@ -240,7 +242,7 @@ export class Match {
     p.conn?.sendJson({ t: 'hurt', amount: Math.round(d.amount), kind: d.kind, from: d.source?.id || 0 });
     const src = d.source;
     if (src && src !== p) {
-      src.damageDealt = (src.damageDealt || 0) + d.amount;
+      src.damageDealt = (src.damageDealt || 0) + effective;
       src.conn?.sendJson({ t: 'hit', dmg: Math.round(d.amount), head: !!d.head, shield: shieldBefore > 0, x: d.point?.x, y: d.point?.y, z: d.point?.z, kill: p.hp <= 0 });
     }
     if (p.hp <= 0) this.eliminate(p, d);
@@ -251,7 +253,9 @@ export class Match {
     const killer = d.source && d.source !== p ? d.source : null;
     if (killer) killer.kills++;
     p.eliminatedBy = killer ? killer.id : 0;
-    this.broadcastFeed?.({ killer: killer?.id || 0, victim: p.id, cause: d.kind || 'unknown', weapon: d.weapon || '', head: !!d.head });
+    this.broadcastFeed({ killer: killer?.id || 0, victim: p.id, cause: d.kind || 'unknown', weapon: d.weapon || '', head: !!d.head });
+    // No respawns, no second chances: what you carried is left for whoever finds it.
+    if (this.mode !== 'sandbox') this.dropLootPile(p);
     p.hp = 0;
     p.alive = false;
     p.move.mode = MODE_DEAD;
@@ -276,6 +280,13 @@ export class Match {
     this.giveItem(p, { key: 'shield', count: 2 });
     p.ammo = { light: 120, medium: 240, heavy: 40, rockets: 6 };
     p.invDirty = true;
+  }
+
+  broadcastFeed(entry) {
+    const msg = { t: 'feed', ...entry };
+    for (const conn of this.conns) conn.sendJson(msg);
+    this.feed = this.feed || [];
+    this.feed.push({ ...entry, tick: this.tick });
   }
 
   /** Sandbox only: the dead come back after three seconds at a spawn point. */
