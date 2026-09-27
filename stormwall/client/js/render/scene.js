@@ -12,7 +12,7 @@ export function createScene(canvas, { quality = 'high' } = {}) {
   renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, quality === 'low' ? 1 : 1.5));
   renderer.outputColorSpace = THREE.SRGBColorSpace;
   renderer.toneMapping = THREE.ACESFilmicToneMapping;
-  renderer.toneMappingExposure = 1.05;
+  renderer.toneMappingExposure = 0.95;
   renderer.shadowMap.enabled = quality !== 'low';
   renderer.shadowMap.type = THREE.PCFShadowMap;
 
@@ -23,9 +23,9 @@ export function createScene(canvas, { quality = 'high' } = {}) {
   const camera = new THREE.PerspectiveCamera(78, 1, 0.1, 9000);
   camera.rotation.order = 'YXZ';
 
-  const hemi = new THREE.HemisphereLight(0xcfe6ff, 0x5c6b3a, 1.15);
+  const hemi = new THREE.HemisphereLight(0xcfe6ff, 0x5c6b3a, 0.95);
   scene.add(hemi);
-  const sun = new THREE.DirectionalLight(0xfff1d6, 2.4);
+  const sun = new THREE.DirectionalLight(0xfff1d6, 1.9);
   sun.position.set(0.45, 1, 0.3).multiplyScalar(200);
   sun.castShadow = quality !== 'low';
   sun.shadow.mapSize.set(2048, 2048);

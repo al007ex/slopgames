@@ -137,6 +137,8 @@ class App {
     $('loading').hidden = true;
     $('menu').hidden = false;
     this.loadRegions();
+    // No mouse and keyboard, no game: say so before anyone presses Play.
+    if (window.matchMedia?.('(pointer: coarse)').matches && !window.matchMedia?.('(any-pointer: fine)').matches) $('touch-note').hidden = false;
     requestAnimationFrame((t) => this.frame(t));
     // Some embedded views stop animation frames while not being painted; keep
     // the simulation ticking anyway. Hidden tabs throttle this to 1 Hz, so it

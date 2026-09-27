@@ -5,6 +5,20 @@ and has its own setup instructions.
 
 ## Games
 
+### Stormwall
+
+`stormwall/` is a 100-player build-and-shoot battle royale: drop from a blimp,
+harvest, build, loot and outlast the storm, solo or in duos and squads, with
+bots filling the lobby. It needs a keyboard and mouse.
+
+```bash
+cd stormwall
+npm install
+npm start
+```
+
+Then open <http://localhost:3500>.
+
 ### Glowworm
 
 `glowworm/` is a multiplayer neon snake game in the slither.io mould. Eat

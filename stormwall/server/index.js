@@ -335,6 +335,7 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) 
     port: Number(process.env.PORT) || 3500, host,
     pregameSeconds: Number(process.env.PREGAME_SECONDS) || undefined,
     maxMatches: Number(process.env.MAX_MATCHES) || undefined,
+    dataDir: process.env.DATA_DIR || undefined,
   });
   for (const signal of ['SIGTERM', 'SIGINT']) {
     process.on(signal, () => { running.close().then(() => process.exit(0)); });
