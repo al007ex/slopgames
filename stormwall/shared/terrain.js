@@ -40,7 +40,9 @@ export function naturalHeight(x, z, seed) {
   const mountain = base + ridge * ridge * ridge * 185 + (bump > 0 ? bump : 0) * 35;
   const farm = 9 + 3 * fbm(x / 900, z / 900, seed + 7, 3);
   const industrial = 5 + 1.2 * fbm(x / 800, z / 800, seed + 8, 2);
-  const swamp = 1.1 + 2.4 * fbm(x / 170, z / 170, seed + 5, 3);
+  // Low and waterlogged: the dips sit just under sea level as shallow ponds.
+  const swampRaw = 0.55 + 2.6 * fbm(x / 170, z / 170, seed + 5, 3);
+  const swamp = swampRaw < -1.1 ? -1.1 : swampRaw;         // wading depth, never deep
   const generic = base + hills * 0.55 + w.center * hills * 0.5;
 
   const rest = 1 - w.farm - w.mountain - w.swamp - w.industrial;

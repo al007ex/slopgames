@@ -238,8 +238,42 @@ export function generateWorld(seed = MAP_SEED) {
     else world.pregameSpots.push({ x: px, y: h + 0.1, z: pz });
   }
 
+  world.roads = planRoads(pois);
   world.hash = hashWorld(world);
   return world;
+}
+
+/**
+ * Dirt roads joining the named places: a minimum spanning tree (every place
+ * reachable) plus a few short extra links so it is a network, not a tree.
+ */
+export function planRoads(pois) {
+  const n = pois.length;
+  const dist = (a, b) => Math.sqrt((a.x - b.x) * (a.x - b.x) + (a.z - b.z) * (a.z - b.z));
+  const inTree = new Set([0]);
+  const roads = [];
+  const key = new Set();
+  while (inTree.size < n) {
+    let best = null, bd = Infinity;
+    for (const i of inTree) for (let j = 0; j < n; j++) {
+      if (inTree.has(j)) continue;
+      const d = dist(pois[i], pois[j]);
+      if (d < bd) { bd = d; best = [i, j]; }
+    }
+    inTree.add(best[1]);
+    roads.push(best);
+    key.add(`${Math.min(...best)}-${Math.max(...best)}`);
+  }
+  for (let i = 0; i < n; i++) {
+    let second = -1, sd = Infinity;
+    for (let j = 0; j < n; j++) {
+      if (i === j || key.has(`${Math.min(i, j)}-${Math.max(i, j)}`)) continue;
+      const d = dist(pois[i], pois[j]);
+      if (d < sd) { sd = d; second = j; }
+    }
+    if (second >= 0 && sd < 1100) { roads.push([i, second]); key.add(`${Math.min(i, second)}-${Math.max(i, second)}`); }
+  }
+  return roads.map(([i, j]) => ({ a: i, b: j, x0: pois[i].x, z0: pois[i].z, x1: pois[j].x, z1: pois[j].z }));
 }
 
 /** FNV-1a over everything generated; server and client compare these. */

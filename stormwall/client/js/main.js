@@ -62,7 +62,7 @@ class App {
 
     this.canvas = $('view');
     this.gfx = createScene(this.canvas);
-    this.terrain = new TerrainRenderer(this.gfx.scene, this.base.terrain);
+    this.terrain = new TerrainRenderer(this.gfx.scene, this.base.terrain, this.base.roads);
     this.cam = new ThirdPersonCamera(this.gfx.camera);
     this.input = new Input(this.canvas);
     this.game = new ClientGame(this.base);
@@ -98,7 +98,7 @@ class App {
     this.build = new BuildController(this);
     this.loadout = new Loadout(this);
     this.storm = new StormView(this);
-    this.map = new MapView(this, this.terrain.colors, this.base.terrain, this.base.pois);
+    this.map = new MapView(this, this.terrain.colors, this.base.terrain, this.base.pois, this.base.roads);
     this.flow = new MatchFlow(this);
     this.team = new TeamView(this);
     this.teammateMarks = () => this.team.marks();
@@ -400,6 +400,7 @@ class App {
     this.loot.frame(dt, this.gfx.camera.position, pos);
     this.updatePrompt(pos);
     this.updateScoreboard();
+    this.announcePlace(pos);
     this.team.frame(dt);
     this.storm.frame(dt, pos);
     this.map.frame(pos, this.yaw, this.storm.state, this.teammateMarks?.() || []);
@@ -502,6 +503,15 @@ class App {
       const it = { key: t.o.key, rarity: t.rec.rarity };
       el.innerHTML = `<kbd>E</kbd> Pick up <b class="r${t.rec.rarity}">${esc(itemName(it))}</b>${t.rec.count > 1 && !WEAPONS[t.o.key] ? ` ×${t.rec.count}` : ''}`;
     }
+  }
+
+  /** Crossing into a named place puts its name on screen, like a road sign. */
+  announcePlace(pos) {
+    const m = this.game.me.move;
+    if (m.mode !== 0 && m.mode !== 2) return;
+    const here = this.base.pois.find((p) => Math.hypot(p.x - pos.x, p.z - pos.z) < p.r);
+    if (here && here !== this.lastPlace) this.toast(here.name.toUpperCase(), 2200);
+    this.lastPlace = here || (this.lastPlace && Math.hypot(this.lastPlace.x - pos.x, this.lastPlace.z - pos.z) < this.lastPlace.r + 40 ? this.lastPlace : null);
   }
 
   /** Hold Tab: players left, your match so far, and who is running up the eliminations. */

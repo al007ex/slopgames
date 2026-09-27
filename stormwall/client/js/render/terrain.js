@@ -16,10 +16,10 @@ const LOD_DIST = [260, 560, 1200, 2400];
 const SKIRT = 10;
 
 export class TerrainRenderer {
-  constructor(scene, terrain) {
+  constructor(scene, terrain, roads = []) {
     this.terrain = terrain;
     this.material = new THREE.MeshLambertMaterial({ vertexColors: true });
-    this.colors = computeColors(terrain);
+    this.colors = computeColors(terrain, roads);
     this.chunks = [];
     this.group = new THREE.Group();
     scene.add(this.group);
@@ -107,7 +107,7 @@ export class TerrainRenderer {
 const mix3 = (a, b, t) => [a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t, a[2] + (b[2] - a[2]) * t];
 
 /** Ground colour per terrain corner, from biome, height and slope. Also used for the map. */
-export function computeColors(terrain) {
+export function computeColors(terrain, roads = []) {
   const h = terrain.h;
   const out = new Uint8Array(SIDE * SIDE * 3);
   const w = {};
@@ -133,5 +133,29 @@ export function computeColors(terrain) {
       out[k * 3] = Math.min(255, c[0] * jitter); out[k * 3 + 1] = Math.min(255, c[1] * jitter); out[k * 3 + 2] = Math.min(255, c[2] * jitter);
     }
   }
+  paintRoads(out, h, roads);
   return out;
+}
+
+/** Dirt tracks along each road, fading at the edges, skipping water. */
+function paintRoads(out, h, roads) {
+  const DIRT = [150, 124, 86];
+  const half = 4.2, edge = 2.6;
+  for (const r of roads) {
+    const dx = r.x1 - r.x0, dz = r.z1 - r.z0, len2 = dx * dx + dz * dz;
+    const i0 = Math.max(0, Math.floor((Math.min(r.x0, r.x1) - 8) / CELL)), i1 = Math.min(GRID_N, Math.ceil((Math.max(r.x0, r.x1) + 8) / CELL));
+    const j0 = Math.max(0, Math.floor((Math.min(r.z0, r.z1) - 8) / CELL)), j1 = Math.min(GRID_N, Math.ceil((Math.max(r.z0, r.z1) + 8) / CELL));
+    for (let j = j0; j <= j1; j++) {
+      for (let i = i0; i <= i1; i++) {
+        const k = j * SIDE + i;
+        if (h[k] < 0.4) continue;
+        const px = i * CELL - r.x0, pz = j * CELL - r.z0;
+        const t = Math.max(0, Math.min(1, (px * dx + pz * dz) / len2));
+        const d = Math.hypot(px - dx * t, pz - dz * t);
+        if (d > half + edge) continue;
+        const w = d < half ? 0.85 : 0.85 * (1 - (d - half) / edge);
+        for (let c = 0; c < 3; c++) out[k * 3 + c] = out[k * 3 + c] * (1 - w) + DIRT[c] * w;
+      }
+    }
+  }
 }

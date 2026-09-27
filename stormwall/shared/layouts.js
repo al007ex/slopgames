@@ -87,6 +87,7 @@ function layoutQuarry(b, rng, poi) {
   for (const [dx, dz] of [[-20, -8], [-20, 2], [-12, 14]]) {
     building(b, rng, { cx: c0x + dx, cz: c0z + dz, lv: poi.level, w: 3, d: 2, floors: 1, wallMat: METAL, roof: 'flat', roofMat: METAL, front: 'e', furniture: 'warehouse', garage: rng.chance(0.5) });
   }
+  building(b, rng, { cx: c0x - 26, cz: c0z - 4, lv: poi.level, w: 3, d: 3, floors: 2, groundMat: STONE, upperMat: WOOD, roof: 'flat', roofMat: METAL, front: 'e', furniture: 'shop' });
   for (let i = 0; i < 8; i++) b.prop('container', poi.x - 90 + rng.range(-10, 10), poi.baseY, poi.z - 60 + i * 7, Math.PI / 2);
   for (let i = 0; i < 26; i++) {
     const a = rng.range(0, Math.PI * 2), r = rng.range(78, poi.r);
@@ -98,6 +99,7 @@ function layoutQuarry(b, rng, poi) {
 
 function layoutSwamp(b, rng, poi) {
   const c0x = toCell(poi.x), c0z = toCell(poi.z);
+  building(b, rng, { cx: c0x - 1, cz: c0z - 1, lv: poi.level, w: 3, d: 2, floors: 2, groundMat: STONE, upperMat: WOOD, front: 's', furniture: 'cabin' });
   for (let k = 0; k < 7; k++) {
     const a = (k / 7) * Math.PI * 2 + rng.range(-0.25, 0.25);
     const r = rng.range(6, 20);
@@ -117,6 +119,7 @@ function layoutDocks(b, rng, poi) {
   for (let row = 0; row < 3; row++) {
     for (let i = 0; i < 7; i++) b.prop('container', poi.x - 50 + i * 7, poi.baseY, poi.z + 18 + row * 3.2, Math.PI / 2);
   }
+  building(b, rng, { cx: c0x - 18, cz: c0z + 2, lv: poi.level, w: 3, d: 2, floors: 2, groundMat: STONE, upperMat: WOOD, front: 'n', furniture: 'shop' });
   // A timber pier out over the water.
   for (let i = 0; i < 8; i++) for (let j = 0; j < 2; j++) b.piece(FLOOR, c0x + 8 + j, poi.level, c0z + 4 + i, { mat: WOOD });
   for (let i = 0; i < 3; i++) b.prop('boat', (c0x + 11) * CELL, poi.baseY - 1, (c0z + 6 + i * 3) * CELL, Math.PI / 2);
@@ -128,6 +131,7 @@ function layoutIndustrial(b, rng, poi) {
   for (const [dx, dz] of [[-14, -12], [2, -12], [-14, 3], [3, 4]]) {
     building(b, rng, { cx: c0x + dx, cz: c0z + dz, lv: poi.level, w: 5, d: 4, floors: rng.int(1, 2), wallMat: METAL, upperMat: METAL, roof: 'flat', roofMat: METAL, front: 's', garage: true, furniture: 'warehouse', windows: 0.2 });
   }
+  building(b, rng, { cx: c0x + 10, cz: c0z - 3, lv: poi.level, w: 3, d: 2, floors: 2, groundMat: STONE, upperMat: STONE, roof: 'flat', roofMat: STONE, front: 'w', furniture: 'shop' });
   for (let row = 0; row < 2; row++) for (let i = 0; i < 6; i++) b.prop('container', poi.x - 30 + i * 7, poi.baseY, poi.z - 20 + row * 3.2, Math.PI / 2);
   for (let i = 0; i < 6; i++) b.prop('pipe', poi.x + 60, poi.baseY, poi.z - 40 + i * 14, 0);
   for (let i = 0; i < 12; i++) b.prop('barrel', poi.x + rng.range(-80, 80), poi.baseY, poi.z + rng.range(-80, 80));

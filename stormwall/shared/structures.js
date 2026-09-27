@@ -155,7 +155,8 @@ export function building(b, rng, o) {
       if (name === 'tractor' && s > 0) continue;
       b.prop(name, x, y, z, yaw);
     }
-    const lootCells = cells.slice(0, Math.max(1, Math.round(cells.length * 0.5)));
+    // Named places are stocked denser than lone houses.
+    const lootCells = cells.slice(0, Math.max(1, Math.round(cells.length * (b.tier >= 2 ? 0.65 : 0.4))));
     for (const [i, j] of lootCells) b.loot(cellCenter(i) + rng.range(-1, 1), y, cellCenter(j) + rng.range(-1, 1));
     if (s === storeys - 1 && o.chest !== false && cells.length) {
       const [i, j] = cells[cells.length - 1];

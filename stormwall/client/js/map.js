@@ -9,9 +9,10 @@ import { SIDE } from '#shared/terrain.js';
 const $ = (id) => document.getElementById(id);
 
 export class MapView {
-  constructor(app, colors, terrain, pois) {
+  constructor(app, colors, terrain, pois, roads = []) {
     this.app = app;
     this.pois = pois;
+    this.roads = roads;
     this.open = false;
     // One pixel per terrain corner, water drawn as sea, with a little hill shading.
     const img = document.createElement('canvas');
@@ -61,6 +62,7 @@ export class MapView {
     g.fillRect(0, 0, size, size);
     const px = SIDE / WORLD_SIZE;
     g.drawImage(this.image, (focus.x - span / 2) * px, (focus.z - span / 2) * px, span * px, span * px, 0, 0, size, size);
+    this.drawRoads(g, toX, toY, 3);
     this.drawStorm(g, storm, toX, toY, scale, size);
     this.drawMarks(g, toX, toY, teammates, 1);
     this.drawMe(g, size / 2, size / 2, yaw, 1);
@@ -82,6 +84,7 @@ export class MapView {
       g.beginPath(); g.moveTo(0, i * size / 10); g.lineTo(size, i * size / 10); g.stroke();
     }
     for (let i = 0; i < 10; i++) { g.fillText('ABCDEFGHIJ'[i], i * size / 10 + 4, 14); g.fillText(String(i + 1), 4, i * size / 10 + 28); }
+    this.drawRoads(g, toX, toY, 2);
     if (this.bus) {
       g.strokeStyle = 'rgba(255, 255, 255, 0.7)';
       g.setLineDash([8, 6]);
@@ -103,6 +106,15 @@ export class MapView {
     g.textAlign = 'start';
     this.drawMarks(g, toX, toY, teammates, size / 700);
     this.drawMe(g, toX(focus.x), toY(focus.z), yaw, size / 700);
+  }
+
+  drawRoads(g, toX, toY, width) {
+    g.strokeStyle = 'rgba(160, 128, 84, 0.85)';
+    g.lineWidth = width;
+    g.lineCap = 'round';
+    g.beginPath();
+    for (const r of this.roads) { g.moveTo(toX(r.x0), toY(r.z0)); g.lineTo(toX(r.x1), toY(r.z1)); }
+    g.stroke();
   }
 
   drawStorm(g, storm, toX, toY, scale, size) {
