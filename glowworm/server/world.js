@@ -3,7 +3,7 @@
 // sockets, which is what lets the tests drive it directly.
 
 import {
-  SIM_HZ, SIM_DT, ARENA_RADIUS, START_MASS, MIN_BOOST_MASS, BASE_SPEED, BOOST_SPEED,
+  SIM_HZ, SIM_DT, ARENA_RADIUS, START_MASS, MIN_BOOST_MASS, BASE_SPEED, BOOST_SPEED, SPEED_EASE_SECONDS,
   BOOST_DROP_SECONDS, DEATH_DROP_RATIO, HIT_FORGIVENESS, boostBurn, widthOf, spacingOf,
   segmentsOf, turnRateOf, FOOD_TARGET, FOOD_MAX, FOOD_SPAWN_PER_TICK, FOOD_DECAY_SECONDS,
   EAT_REACH, foodRadius, SNAKE_TARGET, MIN_BOTS, PALETTE, SKINS, BOT_NAMES,
@@ -107,7 +107,7 @@ export class World {
     }
     const snake = {
       id, name, skin: clamp(skin | 0, 0, SKINS.length - 1), bot, alive: true,
-      mass, angle, targetAngle: angle, boost: false, boosting: false,
+      mass, angle, targetAngle: angle, boost: false, boosting: false, speed: BASE_SPEED,
       points, width: widthOf(mass), spacing,
       dropTimer: 0, dropBank: 0, kills: 0, bornTick: this.tick, bestRank: 0,
       brain: bot ? makeBrain(this.rng) : null, owner: null,
@@ -239,10 +239,11 @@ export class World {
     snake.angle = wrapAngle(snake.angle + clamp(diff, -turn, turn));
 
     snake.boosting = snake.boost && snake.mass > MIN_BOOST_MASS;
-    const speed = snake.boosting ? BOOST_SPEED : BASE_SPEED;
+    const target = snake.boosting ? BOOST_SPEED : BASE_SPEED;
+    snake.speed += (target - snake.speed) * (1 - Math.exp(-SIM_DT / SPEED_EASE_SECONDS));
     const p = snake.points;
-    p[0] += Math.cos(snake.angle) * speed * SIM_DT;
-    p[1] += Math.sin(snake.angle) * speed * SIM_DT;
+    p[0] += Math.cos(snake.angle) * snake.speed * SIM_DT;
+    p[1] += Math.sin(snake.angle) * snake.speed * SIM_DT;
 
     if (snake.boosting) {
       // Boosting is paid for in length, and the length is left behind as food —
@@ -326,22 +327,41 @@ export class World {
     }
   }
 
-  /** Heads against other snakes' bodies, and against the wall. Returns [snake, killerId] pairs. */
+  /**
+   * Who dies this tick, as [snake, killerId] pairs.
+   *
+   * The rule is: you die when your head is in the body of a snake that is still
+   * alive at the end of the tick. That single sentence is what guarantees two
+   * snakes can never take each other out — whichever of a pair dies first is
+   * gone, and a snake that is gone cannot kill anyone.
+   *
+   * Resolution runs in rounds. A snake whose head touches nothing survives. A
+   * snake touching a survivor dies. A snake that only touched snakes which have
+   * already died survives, because what it hit is no longer there. When snakes
+   * are only touching one another — a head-on, or two heads crossed into each
+   * other's bodies — nothing is settled by those rules, so the smallest of them
+   * dies first (a coin decides exact ties) and the rounds carry on from there.
+   */
   findCollisions() {
     const deaths = [];
     let maxHalf = 0;
     for (const snake of this.slots) maxHalf = Math.max(maxHalf, snake.width / 2);
 
+    // Every contact, recorded as how deep a head sits inside each body it touches.
+    const contacts = new Map();   // snake -> Map(otherSnake -> depth)
+    const fate = new Map();       // snake -> 'alive' | 'dead'
     for (let slot = 0; slot < this.slots.length; slot++) {
       const a = this.slots[slot];
       const hx = a.points[0];
       const hy = a.points[1];
       const ra = a.width / 2;
-      if (Math.hypot(hx, hy) + ra * 0.5 > ARENA_RADIUS) { deaths.push([a, 0]); continue; }
-
-      let killer = -1;
+      if (Math.hypot(hx, hy) + ra * 0.5 > ARENA_RADIUS) {
+        fate.set(a, 'dead');
+        deaths.push([a, 0]);
+        continue;
+      }
+      const touched = new Map();
       this.bodyGrid.query(hx, hy, ra + maxHalf, (item) => {
-        if (killer >= 0) return;
         const other = item >> 10;
         if (other === slot) return;   // your own body never kills you
         const b = this.slots[other];
@@ -349,9 +369,55 @@ export class World {
         const dx = b.points[i] - hx;
         const dy = b.points[i + 1] - hy;
         const reach = (ra + b.width / 2) * HIT_FORGIVENESS;
-        if (dx * dx + dy * dy < reach * reach) killer = b.id;
+        const d2 = dx * dx + dy * dy;
+        if (d2 >= reach * reach) return;
+        const depth = reach - Math.sqrt(d2);
+        if (depth > (touched.get(b) ?? -1)) touched.set(b, depth);
       });
-      if (killer >= 0) deaths.push([a, killer]);
+      if (touched.size) contacts.set(a, touched);
+      else fate.set(a, 'alive');
+    }
+
+    const killerOf = (touched, allowed) => {
+      let best = null;
+      let deepest = -1;
+      for (const [other, depth] of touched) {
+        if (allowed(fate.get(other)) && depth > deepest) { deepest = depth; best = other; }
+      }
+      return best;
+    };
+    const kill = (snake, killer) => {
+      fate.set(snake, 'dead');
+      deaths.push([snake, killer.id]);
+    };
+
+    // Random tie-breaks are drawn up front, once per snake, so the outcome of a
+    // head-on between equals does not depend on the order snakes are stored in.
+    const coin = new Map();
+    for (const snake of contacts.keys()) coin.set(snake, this.rng());
+
+    let undecided = [...contacts.keys()];
+    while (undecided.length) {
+      let settled = false;
+      for (const snake of undecided) {
+        const touched = contacts.get(snake);
+        const survivor = killerOf(touched, (state) => state === 'alive');
+        if (survivor) { kill(snake, survivor); settled = true; continue; }
+        if ([...touched.keys()].every((other) => fate.get(other) === 'dead')) {
+          fate.set(snake, 'alive');
+          settled = true;
+        }
+      }
+      undecided = undecided.filter((snake) => !fate.has(snake));
+      if (settled || !undecided.length) continue;
+
+      // Deadlock: everyone left is only touching someone else who is also
+      // undecided. The weakest goes, credited to whoever it hit hardest.
+      const weakest = undecided.reduce((a, b) => (
+        a.mass < b.mass || (a.mass === b.mass && coin.get(a) < coin.get(b)) ? a : b
+      ));
+      kill(weakest, killerOf(contacts.get(weakest), (state) => state === undefined));
+      undecided = undecided.filter((snake) => snake !== weakest);
     }
     return deaths;
   }

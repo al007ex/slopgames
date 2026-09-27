@@ -46,7 +46,7 @@ function wireState() {
     ui.hideMenu();
   });
   state.on('death', (event) => {
-    renderer.burst(event.points, event.victimInfo?.skin ?? 0);
+    renderer.burst(event.points, event.victimInfo?.skin ?? 0, event.score);
     ui.death(event, state.you);
   });
   state.on('youDied', (message) => {
@@ -102,7 +102,10 @@ function frame(now) {
   const diagonal = Math.hypot(window.innerWidth, window.innerHeight);
   const smallScreen = Math.min(1, Math.max(0.72, diagonal / 1500));
   const mass = you ? you.mass : 120;
-  const scale = diagonal / (viewDiagonalOf(mass) * smallScreen);
+  // Boosting pulls the camera back a touch, eased with the glow, which sells
+  // the burst of speed without moving the snake off centre.
+  const kick = you ? 1 - 0.07 * renderer.boostLevel(you.id) : 1;
+  const scale = (diagonal / (viewDiagonalOf(mass) * smallScreen)) * kick;
   renderer.zoomTo(scale, dt);
   let focus = you ? { x: you.points[0], y: you.points[1] } : view.camera;
   if (!you && focus && window.innerWidth > 900 && ui.overlayOpen) {

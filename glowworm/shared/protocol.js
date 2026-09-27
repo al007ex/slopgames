@@ -2,12 +2,13 @@
 // sends a lot of bodies a lot of times a second, and JSON would multiply the
 // traffic several times over — which matters most on the phones we support.
 //
-// Body points are the bulk of it. The head goes out as two int16s and every
-// other point as an int8 offset from the one before, at COORD_SCALE precision.
-// Offsets are taken from the *reconstructed* previous point rather than the
-// true one, so rounding error cannot pile up towards the tail.
+// Body points are the bulk of it. The head goes out as two int16s at
+// HEAD_SCALE precision and every other point as an int8 offset from the one
+// before, at COORD_SCALE precision. Offsets are taken from the *reconstructed*
+// previous point rather than the true one, so rounding error cannot pile up
+// towards the tail.
 
-import { COORD_SCALE, NAME_MAX } from './rules.js';
+import { COORD_SCALE, HEAD_SCALE, NAME_MAX } from './rules.js';
 
 export const SERVER = {
   WELCOME: 1, SNAPSHOT: 2, FOOD_ADD: 3, FOOD_EAT: 4, SNAKE_INFO: 5,
@@ -23,6 +24,7 @@ const encoder = new TextEncoder();
 const decoder = new TextDecoder();
 const clamp = (v, lo, hi) => (v < lo ? lo : v > hi ? hi : v);
 const quantise = (v) => clamp(Math.round(v * COORD_SCALE), -32768, 32767);
+const quantiseHead = (v) => clamp(Math.round(v * HEAD_SCALE), -32768, 32767);
 
 export const angleToByte = (a) => Math.round(((a % TAU + TAU) % TAU) / TAU * 256) & 255;
 export const byteToAngle = (b) => (b / 256) * TAU;
@@ -106,14 +108,19 @@ export function encodeSnakeBlock(snake) {
   const w = new Writer(14 + count * 2);
   w.u16(snake.id); w.u8(snake.flags); w.u8(angleToByte(snake.angle));
   w.f32(snake.mass); w.u16(count);
-  let qx = quantise(snake.points[0]);
-  let qy = quantise(snake.points[1]);
-  w.i16(qx); w.i16(qy);
+  const hx = quantiseHead(snake.points[0]);
+  const hy = quantiseHead(snake.points[1]);
+  w.i16(hx); w.i16(hy);
+  // Reconstructed position of the previous point, exactly as the decoder will
+  // have it: head eighths plus body halves are exact in binary floating point.
+  let px = hx / HEAD_SCALE;
+  let py = hy / HEAD_SCALE;
   for (let i = 1; i < count; i++) {
-    const dx = clamp(Math.round(snake.points[i * 2] * COORD_SCALE) - qx, -127, 127);
-    const dy = clamp(Math.round(snake.points[i * 2 + 1] * COORD_SCALE) - qy, -127, 127);
+    const dx = clamp(Math.round((snake.points[i * 2] - px) * COORD_SCALE), -127, 127);
+    const dy = clamp(Math.round((snake.points[i * 2 + 1] - py) * COORD_SCALE), -127, 127);
     w.i8(dx); w.i8(dy);
-    qx += dx; qy += dy;
+    px += dx / COORD_SCALE;
+    py += dy / COORD_SCALE;
   }
   return w.done();
 }
@@ -125,8 +132,8 @@ export function assembleSnapshot(tick, cx, cy, blocks) {
   const view = new DataView(out.buffer);
   view.setUint8(0, SERVER.SNAPSHOT);
   view.setUint32(1, tick >>> 0, true);
-  view.setInt16(5, quantise(cx), true);
-  view.setInt16(7, quantise(cy), true);
+  view.setInt16(5, quantiseHead(cx), true);
+  view.setInt16(7, quantiseHead(cy), true);
   view.setUint16(9, blocks.length, true);
   let offset = 11;
   for (const block of blocks) { out.set(block, offset); offset += block.length; }
@@ -200,8 +207,8 @@ export function decodeServer(data) {
       return { type, you: r.u16(), arena: r.u16(), simHz: r.u8(), sendEvery: r.u8(), tick: r.u32() };
     case SERVER.SNAPSHOT: {
       const tick = r.u32();
-      const cx = r.i16() / COORD_SCALE;
-      const cy = r.i16() / COORD_SCALE;
+      const cx = r.i16() / HEAD_SCALE;
+      const cy = r.i16() / HEAD_SCALE;
       const count = r.u16();
       const snakes = [];
       for (let s = 0; s < count; s++) {
@@ -211,12 +218,13 @@ export function decodeServer(data) {
         const mass = r.f32();
         const n = r.u16();
         const points = new Float32Array(n * 2);
-        let qx = r.i16();
-        let qy = r.i16();
-        points[0] = qx / COORD_SCALE; points[1] = qy / COORD_SCALE;
+        let px = r.i16() / HEAD_SCALE;
+        let py = r.i16() / HEAD_SCALE;
+        points[0] = px; points[1] = py;
         for (let i = 1; i < n; i++) {
-          qx += r.i8(); qy += r.i8();
-          points[i * 2] = qx / COORD_SCALE; points[i * 2 + 1] = qy / COORD_SCALE;
+          px += r.i8() / COORD_SCALE;
+          py += r.i8() / COORD_SCALE;
+          points[i * 2] = px; points[i * 2 + 1] = py;
         }
         snakes.push({ id, flags, angle, mass, points });
       }
