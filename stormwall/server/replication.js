@@ -80,6 +80,7 @@ export const replicationMethods = {
     }
     if (items.length) this.writeItems?.(w, items, B_ITEMS);
     if (chests.length) this.writeChests?.(w, chests, B_CHESTS);
+    this.writeProjectiles?.(w, focus);
     // Events near the focus: hits, breaks, shots, explosions.
     if (this.events.length) {
       const near = [];

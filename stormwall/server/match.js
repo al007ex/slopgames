@@ -21,7 +21,10 @@ import { replicationMethods } from './replication.js';
 import { structureMethods } from './structures.js';
 import { harvestMethods } from './harvest.js';
 import { buildingMethods } from './building.js';
-import { A_SLOT, A_BUILD, A_MAT, A_PLACE, A_EDIT } from '../shared/protocol.js';
+import { combatMethods, EQUIP_TICKS } from './combat.js';
+import { A_SLOT, A_BUILD, A_MAT, A_PLACE, A_EDIT, A_RELOAD, PF_ADS, PF_BUILD, PF_FIRING, PF_USING, PF_HARVEST } from '../shared/protocol.js';
+import { itemId } from '../shared/items.js';
+import { BTN_ADS } from '../shared/movement.js';
 
 export const STAGES = ['input', 'movement', 'build', 'fire', 'damage', 'storm', 'replication'];
 
@@ -49,6 +52,7 @@ export class Match {
     this.damageQueue = [];
     this.spawnPoints = [];
     this.rng = new Rng(rngSeed);
+    this.projectiles = [];
     this.initReplication();
   }
 
@@ -132,13 +136,18 @@ export class Match {
       case A_MAT: if (a.mat <= 2) p.buildMat = a.mat; break;
       case A_PLACE: if (p.pendingBuild.length < 4) p.pendingBuild.push(a); break;
       case A_EDIT: if (p.pendingEdits.length < 4) p.pendingEdits.push(a); break;
+      case A_RELOAD: this.startReload(p); break;
       default: this.onOtherAction?.(p, a);
     }
   }
 
   selectSlot(p, slot) {
     p.buildMode = false;
-    if (slot >= 0 && slot <= 5) p.held = slot;
+    if (slot < 0 || slot > 5 || slot === p.held) return;
+    p.held = slot;
+    p.equipUntil = this.tick + EQUIP_TICKS;
+    p.burstLeft = 0;
+    p.invDirty = true;
   }
 
   /* ------------------------------------------------------- 2. movement */
@@ -200,7 +209,10 @@ export class Match {
   applyDamage(d) {
     const p = d.target;
     if (!p.alive) return 0;
+    if (d.source && this.friendly(d.source, p)) return 0;     // friendly fire is off
+    if (this.noDamage && d.kind !== 'storm') return 0;          // the pre-game island
     let amount = d.amount;
+    const shieldBefore = p.shield;
     // Shields soak damage first — except falling, which only ever hurts health.
     if (d.kind !== 'fall' && p.shield > 0) {
       const soaked = Math.min(p.shield, amount);
@@ -208,12 +220,21 @@ export class Match {
       amount -= soaked;
     }
     p.hp -= amount;
-    p.conn?.sendJson({ t: 'hurt', amount: d.amount, kind: d.kind, from: d.source?.id || 0 });
+    p.conn?.sendJson({ t: 'hurt', amount: Math.round(d.amount), kind: d.kind, from: d.source?.id || 0 });
+    const src = d.source;
+    if (src && src !== p) {
+      src.damageDealt = (src.damageDealt || 0) + d.amount;
+      src.conn?.sendJson({ t: 'hit', dmg: Math.round(d.amount), head: !!d.head, shield: shieldBefore > 0, x: d.point?.x, y: d.point?.y, z: d.point?.z, kill: p.hp <= 0 });
+    }
     if (p.hp <= 0) this.eliminate(p, d);
     return d.amount;
   }
 
   eliminate(p, d = {}) {
+    const killer = d.source && d.source !== p ? d.source : null;
+    if (killer) killer.kills++;
+    p.eliminatedBy = killer ? killer.id : 0;
+    this.broadcastFeed?.({ killer: killer?.id || 0, victim: p.id, cause: d.kind || 'unknown', weapon: d.weapon || '', head: !!d.head });
     p.hp = 0;
     p.alive = false;
     p.move.mode = MODE_DEAD;
@@ -221,6 +242,19 @@ export class Match {
     p.diedAt = this.tick;
     p.conn?.sendJson({ t: 'died', cause: d.kind || 'unknown', by: d.source?.id || 0 });
     if (this.mode === 'sandbox') p.respawnAt = this.tick + 3 * TICK_HZ;
+  }
+
+  /** Practice mode gives everyone materials and a full kit to try things with. */
+  practiceLoadout(p) {
+    p.mats = [300, 300, 300];
+    p.inv = [null, null, null, null, null];
+    this.giveItem(p, { key: 'ar', rarity: 2 });
+    this.giveItem(p, { key: 'pump', rarity: 1 });
+    this.giveItem(p, { key: 'sniper', rarity: 2 });
+    this.giveItem(p, { key: 'rocket', rarity: 3 });
+    this.giveItem(p, { key: 'shield', count: 2 });
+    p.ammo = { light: 120, medium: 240, heavy: 40, rockets: 6 };
+    p.invDirty = true;
   }
 
   /** Sandbox only: the dead come back after three seconds at a spawn point. */
@@ -233,6 +267,7 @@ export class Match {
       p.hp = 100;
       p.shield = 0;
       p.respawnAt = 0;
+      this.practiceLoadout(p);
       p.conn?.sendJson({ t: 'respawned' });
     }
   }
@@ -242,6 +277,14 @@ export class Match {
 
   stageReplicate() {
     this.mark('replication');
+    for (const p of this.players.values()) {
+      // What other clients need to draw this player: what they hold and what they are doing.
+      const item = p.held > 0 ? p.inv[p.held - 1] : null;
+      p.heldKind = p.buildMode ? 255 : item ? itemId(item.key) : 0;
+      p.heldRarity = item ? item.rarity || 0 : 0;
+      p.flags = ((p.buttons & BTN_ADS) && !p.buildMode ? PF_ADS : 0) | (p.buildMode ? PF_BUILD : 0)
+        | (this.tick - p.lastShotTick < 3 ? PF_FIRING : 0) | (p.using ? PF_USING : 0) | (this.tick - p.swingTick < 10 ? PF_HARVEST : 0);
+    }
     // Bucket players by replication cell once, then each client reads the
     // cells around it instead of scanning all hundred players.
     for (const b of this.repBuckets) b.length = 0;
@@ -260,7 +303,14 @@ export class Match {
     }
   }
 
-  inventoryMessage(p) { return { t: 'inv', mats: p.mats }; }
+  inventoryMessage(p) {
+    return {
+      t: 'inv', mats: p.mats, slots: p.inv, ammo: p.ammo, held: p.held,
+      reload: p.reloadEnd ? { end: p.reloadEnd, total: p.reloadEnd - (p.reloadStart || this.tick) } : null,
+      using: p.using ? { key: p.using.key, start: p.using.start, end: p.using.end } : null,
+      shots: p.shots,
+    };
+  }
 
   /** The point a connection sees the world from: its player, or who it spectates. */
   focusOf(conn) {
@@ -315,7 +365,7 @@ export class Match {
   }
 }
 
-Object.assign(Match.prototype, replicationMethods, structureMethods, harvestMethods, buildingMethods);
+Object.assign(Match.prototype, replicationMethods, structureMethods, harvestMethods, buildingMethods, combatMethods);
 
 export function repCellOf(x, z) {
   const i = Math.floor(x / REP_CELL), j = Math.floor(z / REP_CELL);

@@ -21,6 +21,9 @@ export function createPlayer({ id, name, team = id, bot = false, outfit = 0, gli
     bus: false,
     mats: [0, 0, 0], held: 0, nextSwing: 0, swingTick: -100, weak: null, invDirty: false,
     buildMode: false, buildPiece: 0, buildMat: 0, lastPlace: -1e9, using: null,
+    inv: [null, null, null, null, null], ammo: { light: 0, medium: 0, heavy: 0, rockets: 0 },
+    bloom: 0, shots: 0, nextShot: 0, fireLatch: false, reloadEnd: 0, reloadSlot: 0, burstLeft: 0, nextBurst: 0, burstSlot: 0, equipUntil: 0,
+    lastShotTick: -100,
   };
 }
 

@@ -12,6 +12,7 @@ export class Net {
     this.rtt = 0;
     this.pingTimer = null;
     this.bytesIn = 0;
+    this.outbox = [];          // JSON said before the socket was open goes out once it is
   }
 
   get url() {
@@ -25,6 +26,7 @@ export class Net {
     ws.binaryType = 'arraybuffer';
     this.ws = ws;
     ws.onopen = () => {
+      for (const msg of this.outbox.splice(0)) ws.send(msg);
       this.handlers.open();
       this.pingTimer = setInterval(() => this.sendBinary(encodePing(this.pingWriter, performance.now())), 2000);
     };
@@ -49,7 +51,11 @@ export class Net {
 
   get open() { return this.ws && this.ws.readyState === WebSocket.OPEN; }
   on(event, fn) { this.handlers[event] = fn; }
-  sendJson(obj) { if (this.open) this.ws.send(JSON.stringify(obj)); }
+  sendJson(obj) {
+    const text = JSON.stringify(obj);
+    if (this.open) this.ws.send(text);
+    else if (this.outbox.length < 20) this.outbox.push(text);
+  }
   sendBinary(bytes) { if (this.open) this.ws.send(bytes); }
   sendInput(input) { this.sendBinary(encodeInput(this.writer, input)); }
   close() { if (this.ws) this.ws.close(); }

@@ -24,6 +24,9 @@
     <div class="bar health"><span id="hp-fill"></span><b id="hp-num">100</b></div>
   </div>
   <div id="note" class="note"></div>
+  <ol id="feed" class="feed"></ol>
+  <div id="scope" class="scope" hidden></div>
+  <div id="progress" class="progress" hidden><span></span><b></b></div>
   <div id="buildbar" class="buildbar">
     <div class="piece"><svg viewBox="0 0 24 24"><rect x="4" y="3" width="16" height="18" rx="1"/></svg><em>Q</em></div>
     <div class="piece"><svg viewBox="0 0 24 24"><path d="M2 15 12 10l10 5-10 5z"/></svg><em>F</em></div>
@@ -37,7 +40,8 @@
       <div class="mat stone"><i></i><b id="mat-1">0</b></div>
       <div class="mat metal"><i></i><b id="mat-2">0</b></div>
     </div>
-    <div id="hotbar" class="hotbar"><div class="slot active"><span class="icon pick"></span><em>1</em></div></div>
+    <div class="held"><b id="item-name"></b><span id="ammo" class="ammo"></span></div>
+    <div id="hotbar" class="hotbar"></div>
   </div>
   <div id="debug" class="debug"></div>
   <div id="toast" class="toast"></div>

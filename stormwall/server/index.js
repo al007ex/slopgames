@@ -125,8 +125,7 @@ export async function startServer({ port = 3500, host, log = console.log, seed, 
     const p = match.addPlayer({ name: conn.name, bot: false });
     const spot = match.spawnPoints[p.id % match.spawnPoints.length];
     match.placeOnGround(p, spot.x, spot.z);
-    p.mats = [300, 300, 300];
-    p.invDirty = true;
+    match.practiceLoadout(p);
     p.conn = conn;
     conn.player = p;
     conn.match = match;

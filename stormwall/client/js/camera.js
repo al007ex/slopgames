@@ -13,6 +13,13 @@ export class ThirdPersonCamera {
     this.hit = {};
     this.dist = CAM_BACK;
     this.shake = 0;
+    this.recoil = 0;
+  }
+
+  /** A little visual kick when you fire (the aim itself does not move). */
+  kick(cls) {
+    const k = { sniper: 0.05, pump: 0.045, tactical: 0.03, revolver: 0.03, rocket: 0.03, grenade: 0.02 }[cls] ?? 0.012;
+    this.recoil = Math.min(0.12, this.recoil + k);
   }
 
   update(dt, move, yaw, pitch, ads, grid, zoomFov = 50) {
@@ -32,7 +39,8 @@ export class ThirdPersonCamera {
       cam.position.y += (Math.random() - 0.5) * this.shake;
       this.shake = Math.max(0, this.shake - dt * 2);
     }
-    cam.rotation.set(pitch, yaw, 0, 'YXZ');
+    this.recoil *= Math.exp(-dt * 14);
+    cam.rotation.set(pitch + this.recoil, yaw, 0, 'YXZ');
     const fov = this.baseFov + (zoomFov - this.baseFov) * this.adsBlend;
     if (Math.abs(cam.fov - fov) > 0.01) { cam.fov = fov; cam.updateProjectionMatrix(); }
     return f;

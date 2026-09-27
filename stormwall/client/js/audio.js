@@ -104,4 +104,28 @@ export class Audio {
   }
 
   swing(pos) { this.noiseBurst(pos, { freq: 900, q: 0.8, gain: 0.25, dur: 0.18, attack: 0.05, range: 25 }); }
+
+  /** A gunshot, by weapon class. Loud ones carry a long way. */
+  gun(pos, cls, own = false) {
+    const g = own ? 0.55 : 0.9;
+    switch (cls) {
+      case 'pistol': this.noiseBurst(pos, { freq: 1800, q: 0.9, gain: g * 0.8, dur: 0.12, range: 120 }); this.tone(pos, { freq: 180, to: 80, gain: g * 0.4, dur: 0.1, range: 120 }); break;
+      case 'revolver': this.noiseBurst(pos, { freq: 900, q: 0.7, gain: g, dur: 0.25, range: 180 }); this.tone(pos, { freq: 110, to: 45, gain: g * 0.6, dur: 0.2, range: 180 }); break;
+      case 'smg': this.noiseBurst(pos, { freq: 2400, q: 1.1, gain: g * 0.6, dur: 0.07, range: 100 }); break;
+      case 'ar': case 'burst': case 'scoped': this.noiseBurst(pos, { freq: 1300, q: 0.8, gain: g * 0.9, dur: 0.14, range: 160 }); this.tone(pos, { freq: 140, to: 60, gain: g * 0.45, dur: 0.12, range: 160 }); break;
+      case 'pump': case 'tactical': this.noiseBurst(pos, { freq: 600, q: 0.5, gain: g * 1.1, dur: 0.32, type: 'lowpass', range: 160 }); this.tone(pos, { freq: 90, to: 40, gain: g * 0.7, dur: 0.25, range: 160 }); break;
+      case 'sniper': this.noiseBurst(pos, { freq: 700, q: 0.6, gain: g * 1.2, dur: 0.5, range: 400 }); this.tone(pos, { freq: 120, to: 35, gain: g * 0.8, dur: 0.45, range: 400 }); break;
+      case 'rocket': case 'grenade': this.noiseBurst(pos, { freq: 400, q: 0.6, gain: g * 0.8, dur: 0.35, type: 'lowpass', range: 150 }); break;
+      default: this.noiseBurst(pos, { freq: 1200, gain: g * 0.6, dur: 0.12 });
+    }
+  }
+
+  boom(pos) {
+    this.noiseBurst(pos, { freq: 260, q: 0.5, gain: 1.4, dur: 1.1, type: 'lowpass', range: 250 });
+    this.tone(pos, { freq: 70, to: 28, gain: 1.0, dur: 0.9, range: 250 });
+  }
+
+  hitmark(head, shield) { this.tone(null, { freq: head ? 1500 : shield ? 900 : 1100, to: head ? 1900 : undefined, gain: 0.12, dur: 0.07, type: head ? 'triangle' : 'sine' }); }
+  click() { this.tone(null, { freq: 2200, gain: 0.08, dur: 0.03, type: 'square' }); }
+  reload(pos) { this.noiseBurst(pos, { freq: 3000, q: 4, gain: 0.25, dur: 0.05, range: 20 }); setTimeout(() => this.noiseBurst(pos, { freq: 2200, q: 4, gain: 0.25, dur: 0.06, range: 20 }), 350); }
 }

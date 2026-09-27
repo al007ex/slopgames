@@ -9,9 +9,9 @@ import { eyeHeight } from './movement.js';
 export const CAM_BACK = 2.7;
 export const CAM_RIGHT = 0.62;
 export const CAM_UP = 0.3;
-export const ADS_BACK = 1.4;
-export const ADS_RIGHT = 0.5;
-export const ADS_UP = 0.22;
+export const ADS_BACK = 1.25;
+export const ADS_RIGHT = 0.78;
+export const ADS_UP = 0.26;
 
 export function viewDir(yaw, pitch, out = {}) {
   const cp = Math.cos(pitch);

@@ -93,3 +93,23 @@ button { font: inherit; cursor: pointer; }
 .buildbar[data-mode=edit] .build-hint::before { content: 'EDITING — click tiles · G confirm · RMB reset — '; color: #9fd8ff; }
 .note { position: absolute; left: 50%; top: 58%; transform: translateX(-50%); font: 600 14px var(--body); color: #ffd0d0; text-shadow: 0 1px 3px #000; opacity: 0; transition: opacity 0.25s; }
 .note.show { opacity: 1; }
+.slot svg { width: 44px; height: 38px; fill: #fff; filter: drop-shadow(0 1px 1px rgba(0,0,0,0.6)); }
+.slot.empty svg { display: none; }
+.held { text-align: right; font-size: 13px; text-shadow: 0 1px 3px #000; }
+.held b { display: block; font-style: italic; letter-spacing: 0.5px; }
+.ammo { font-size: 22px; }
+.dmg { position: absolute; left: 0; top: 0; font: italic 900 20px var(--display); color: #fff; text-shadow: 0 2px 3px rgba(0,0,0,0.8); pointer-events: none; }
+.dmg.shield { color: #7fd0ff; }
+.dmg.head { color: var(--gold); font-size: 26px; }
+.feed { position: absolute; left: 14px; top: 110px; margin: 0; padding: 0; list-style: none; display: grid; gap: 4px; font: 600 13px var(--body); }
+.feed li { background: rgba(0, 0, 0, 0.45); padding: 3px 9px; border-radius: 4px; transition: opacity 0.8s; }
+.feed li.old { opacity: 0; }
+.feed b.me { color: var(--gold); }
+.feed i { color: var(--muted); font-style: normal; margin: 0 4px; }
+.scope { position: absolute; inset: 0; background: radial-gradient(circle at center, transparent 0, transparent 33vh, rgba(0,0,0,0.92) calc(33vh + 2px)); }
+.scope::before, .scope::after { content: ''; position: absolute; background: rgba(0,0,0,0.85); }
+.scope::before { left: 50%; top: 17vh; bottom: 17vh; width: 2px; margin-left: -1px; }
+.scope::after { top: 50%; left: calc(50% - 33vh); right: calc(50% - 33vh); height: 2px; margin-top: -1px; }
+.progress { position: absolute; left: 50%; top: 60%; transform: translateX(-50%); width: 220px; height: 10px; background: rgba(0,0,0,0.55); border-radius: 5px; overflow: hidden; }
+.progress span { position: absolute; inset: 0; background: linear-gradient(90deg, #8fd3ff, #ffffff); transform-origin: left; }
+.progress b { position: absolute; left: 0; right: 0; top: 14px; text-align: center; font: 600 12px var(--body); text-shadow: 0 1px 2px #000; }
