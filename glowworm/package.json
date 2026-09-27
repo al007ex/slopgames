@@ -1,0 +1,23 @@
+{
+  "name": "glowworm",
+  "version": "1.0.0",
+  "description": "Glowworm — a multiplayer neon snake game in the slither.io mould, for mouse, keyboard and touch.",
+  "type": "module",
+  "private": true,
+  "main": "server/index.js",
+  "imports": {
+    "#shared/*": "./shared/*"
+  },
+  "scripts": {
+    "start": "node server/index.js",
+    "dev": "node --watch server/index.js",
+    "test": "node test/protocol.test.js && node test/world.test.js && node test/client.test.js && node test/input.test.js && node test/server.test.js"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "license": "ISC",
+  "dependencies": {
+    "ws": "^8.18.3"
+  }
+}

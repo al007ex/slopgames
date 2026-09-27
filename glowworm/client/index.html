@@ -1,0 +1,80 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover" />
+<meta name="theme-color" content="#04050b" />
+<meta name="mobile-web-app-capable" content="yes" />
+<meta name="apple-mobile-web-app-capable" content="yes" />
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+<title>GLOWWORM — eat the light</title>
+<meta name="description" content="A multiplayer neon snake game. Eat glowing pellets, cut other worms off and grow as long as you can. Plays on desktop and mobile." />
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect width='32' height='32' rx='8' fill='%2304050b'/><path d='M6 22c4-10 8 4 12-6s6-6 8-4' fill='none' stroke='%23d9ff55' stroke-width='5' stroke-linecap='round'/><circle cx='26' cy='12' r='3.2' fill='%23d9ff55'/></svg>" />
+<link rel="stylesheet" href="./css/style.css" />
+<!-- Resolves #shared/ to the modules the server exposes on /shared/. Node
+     resolves the same specifier through package.json "imports". -->
+<script type="importmap">
+{ "imports": { "#shared/": "./shared/" } }
+</script>
+</head>
+<body>
+
+<canvas id="game" aria-label="Glowworm arena"></canvas>
+
+<div id="hud" class="idle">
+  <ol id="feed" class="feed" aria-live="polite"></ol>
+  <section class="board-card" aria-label="Leaderboard">
+    <h2>Leaderboard</h2>
+    <ol id="board"></ol>
+  </section>
+  <div class="stats"><b id="length">10</b><span id="rank"></span></div>
+  <canvas id="minimap" aria-hidden="true"></canvas>
+  <span id="ping" class="ping"></span>
+  <div id="toast" class="toast"></div>
+</div>
+
+<div id="stick" class="stick" hidden><div id="knob" class="knob"></div></div>
+<button id="boost" class="boost" type="button" aria-label="Boost">
+  <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M13.5 2 4.5 13.5h6L9.5 22l9-11.5h-6z" /></svg>
+</button>
+
+<section id="menu" class="overlay">
+  <div class="card">
+    <h1 class="logo">GLOWWORM</h1>
+    <p class="tag">Eat the light. Cut them off. Grow forever.</p>
+    <canvas id="preview" class="preview" aria-hidden="true"></canvas>
+    <input id="name" type="text" placeholder="Pick a nickname" autocomplete="off" spellcheck="false" enterkeyhint="go" aria-label="Nickname" />
+    <div id="skins" class="skins" role="group" aria-label="Skin"></div>
+    <button id="play" class="play" type="button">Play</button>
+    <p class="hint mouse-hint">Steer with the mouse · hold click or <kbd>Space</kbd> to boost</p>
+    <p class="hint touch-hint">Drag anywhere to steer · hold <b>⚡</b> to boost</p>
+    <p class="online"><i></i><span id="online">joining the arena…</span></p>
+  </div>
+</section>
+
+<section id="death" class="overlay" hidden>
+  <div class="card death">
+    <p class="kicker" id="death-kicker">EATEN BY</p>
+    <h2 id="death-by"></h2>
+    <p class="final"><b id="death-length">0</b><span>final length</span></p>
+    <dl class="death-stats">
+      <div><dt>Best rank</dt><dd id="death-rank">—</dd></div>
+      <div><dt>Time alive</dt><dd id="death-time">0:00</dd></div>
+      <div><dt>Worms eaten</dt><dd id="death-kills">0</dd></div>
+    </dl>
+    <button id="again" class="play" type="button">Play again</button>
+    <button id="to-menu" class="ghost" type="button">Change name or skin</button>
+  </div>
+</section>
+
+<div id="status" class="status spin" hidden>
+  <div class="status-card">
+    <i class="spinner"></i>
+    <p id="status-text">Connecting to the arena…</p>
+    <button id="reload" class="play" type="button" hidden>Wake it up</button>
+  </div>
+</div>
+
+<script type="module" src="./js/main.js"></script>
+</body>
+</html>

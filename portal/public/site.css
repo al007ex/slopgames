@@ -223,6 +223,7 @@ main { position: relative; z-index: 1; }
   border-color: rgba(217, 255, 85, .5);
   box-shadow: var(--shadow);
 }
+.game-grid.pairs { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 /* The featured game claims a 2x2 block once the arcade is big enough to fill it. */
 .game-grid.mosaic .game-card.featured { grid-column: span 2; grid-row: span 2; }
 
@@ -543,7 +544,7 @@ body.offline .wordmark { font-size: 1.3rem; }
   .site-header > .shell { flex-wrap: wrap; gap: 12px; }
   .search { order: 3; max-width: none; flex-basis: 100%; }
   .site-header nav { margin-left: auto; }
-  .game-grid { grid-template-columns: 1fr; }
+  .game-grid, .game-grid.pairs { grid-template-columns: 1fr; }
   .launcher { padding: 12px; }
   .launcher-box { padding: 22px; }
   .metrics { grid-template-columns: repeat(2, 1fr); }

@@ -5,6 +5,21 @@ and has its own setup instructions.
 
 ## Games
 
+### Glowworm
+
+`glowworm/` is a multiplayer neon snake game in the slither.io mould. Eat
+glowing pellets to grow, cut other worms off, and turn them into food. It plays
+with a mouse, a keyboard or a touchscreen, and bots keep the arena busy when few
+people are online.
+
+```bash
+cd glowworm
+npm install
+npm start
+```
+
+Then open <http://localhost:3400> in two windows.
+
 ### DuoStrike
 
 `duostrike/` is a two-player co-op FPS adventure. Team up, explore the map,

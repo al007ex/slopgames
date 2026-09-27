@@ -29,10 +29,17 @@ function closeLauncher() {
 
 async function play(slug, source) {
   lastFocus = source ?? null;
-  const embedded = Boolean(launcher && frame);
+  // On phones and tablets a game gets the whole screen: the embedded 16:9
+  // frame would squeeze it into a strip. Each game keeps its own server awake
+  // with the same heartbeat, so nothing is lost by leaving this page. The
+  // "starting" card still shows either way, because waking a server can take
+  // a couple of seconds and a tap with no response feels broken.
+  const fullPage = window.matchMedia('(max-width: 720px), (pointer: coarse)').matches;
+  const overlay = Boolean(launcher);
+  const embedded = overlay && Boolean(frame) && !fullPage;
   closeLauncher();
 
-  if (embedded) {
+  if (overlay) {
     launcher.classList.add('open');
     launcher.setAttribute('aria-hidden', 'false');
     document.body.style.overflow = 'hidden';
@@ -62,7 +69,7 @@ async function play(slug, source) {
     }, 25_000);
   } catch (error) {
     const message = error.message || 'The game server is unavailable.';
-    if (!embedded) return window.alert(message);
+    if (!overlay) return window.alert(message);
     launcher.classList.remove('playing');
     kicker.textContent = 'UNABLE TO START';
     title.textContent = 'Try again in a moment';
@@ -84,6 +91,9 @@ document.addEventListener('keydown', (event) => {
   if (event.key === 'Escape' && launcher?.classList.contains('open')) closeLauncher();
 });
 window.addEventListener('beforeunload', closeLauncher);
+// Coming Back from a full-page game can restore this page from the browser's
+// cache exactly as it was left — with the "Starting…" card still up.
+window.addEventListener('pageshow', (event) => { if (event.persisted) closeLauncher(); });
 
 /* -------------------------------------------------------- search + tags */
 const cards = [...document.querySelectorAll('.game-card')];
