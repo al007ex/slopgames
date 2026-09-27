@@ -1,0 +1,716 @@
+// Boots the client: generates the island (the same one the server has), sets
+// up the renderer, connects, and runs the frame loop — fixed 30 Hz input and
+// prediction ticks underneath, rendering as fast as the display allows.
+
+import * as THREE from 'three';
+import { getWorld, MAP_SEED } from '#shared/worldgen.js';
+import { TICK_MS } from '#shared/constants.js';
+import { BTN_JUMP, BTN_SPRINT, BTN_CROUCH, BTN_FIRE, BTN_ADS, BTN_USE, eyeHeight } from '#shared/movement.js';
+import { quantizeYaw, quantizePitch } from '#shared/protocol.js';
+import { createScene } from './render/scene.js';
+import { TerrainRenderer } from './render/terrain.js';
+import { Avatar, mat } from './render/avatars.js';
+import { PieceRenderer } from './render/pieces.js';
+import { PropRenderer } from './render/props.js';
+import { Particles, WeakMarker } from './render/fx.js';
+import { Audio } from './audio.js';
+import { B_PIECES, B_PROPS, B_HITS } from '#shared/protocol.js';
+import { readPieces, readProps } from '#shared/records.js';
+import { readEvents, EV_HARVEST, EV_BREAK, EV_SWING, EV_IMPACT } from '#shared/events.js';
+import { PICKAXES } from '#shared/cosmetics.js';
+import { BuildController } from './build.js';
+import { Loadout } from './inventory.js';
+import { ShotFx, handModel } from './render/weapons.js';
+import { LootRenderer } from './render/loot.js';
+import { readItems, readChests } from '#shared/records.js';
+import { B_ITEMS, B_CHESTS, A_INTERACT, A_DROP } from '#shared/protocol.js';
+import { EV_CHEST, EV_PICKUP } from '#shared/events.js';
+import { itemName } from '#shared/items.js';
+import { viewDir } from '#shared/aim.js';
+import { StormView } from './storm.js';
+import { MapView } from './map.js';
+import { MatchFlow } from './flow.js';
+import { TeamView } from './team.js';
+import { LobbyView } from './lobby.js';
+import { MODE_BUS, MODE_DEAD } from '#shared/movement.js';
+import { WEAPONS, itemKey, itemId } from '#shared/items.js';
+import { EV_SHOT, EV_EXPLOSION, EV_RELOAD } from '#shared/events.js';
+import { B_PROJECTILES } from '#shared/protocol.js';
+import { ThirdPersonCamera } from './camera.js';
+import { ClientGame } from './game.js';
+import { Net } from './net.js';
+import { Input } from './input.js';
+
+const $ = (id) => document.getElementById(id);
+// Lets the loading text paint before a long synchronous step — without
+// waiting forever in a background tab, where animation frames never come.
+const nextFrame = () => new Promise((resolve) => {
+  let done = false;
+  const go = () => { if (!done) { done = true; setTimeout(resolve, 0); } };
+  requestAnimationFrame(go);
+  setTimeout(go, 80);
+});
+
+class App {
+  async boot() {
+    $('loading-text').textContent = 'Raising the island…';
+    await nextFrame();
+    const t0 = performance.now();
+    this.base = getWorld(MAP_SEED);
+    this.genMs = performance.now() - t0;
+    $('loading-text').textContent = 'Painting the landscape…';
+    await nextFrame();
+
+    this.canvas = $('view');
+    this.gfx = createScene(this.canvas);
+    this.terrain = new TerrainRenderer(this.gfx.scene, this.base.terrain, this.base.roads);
+    this.cam = new ThirdPersonCamera(this.gfx.camera);
+    this.input = new Input(this.canvas);
+    this.game = new ClientGame(this.base);
+    this.pieceR = new PieceRenderer(this.gfx.scene);
+    this.propR = new PropRenderer(this.gfx.scene);
+    this.fillRenderers();
+    this.fx = new Particles(this.gfx.scene);
+    this.shotFx = new ShotFx(this.gfx.scene);
+    this.loot = new LootRenderer(this.gfx.scene, this.audio || null);
+    this.weak = new WeakMarker(this.gfx.scene);
+    this.audio = new Audio();
+    this.loot.audio = this.audio;
+    this.mats = [0, 0, 0];
+    this.swingAt = -1e9;
+    this.game.onBlock(B_PIECES, readPieces, (list) => this.game.applyPieces(list, this.pieceHooks));
+    this.game.onBlock(B_PROPS, readProps, (list) => this.game.applyProps(list, this.propHooks));
+    this.game.onBlock(B_HITS, readEvents, (events) => this.onEvents(events));
+    this.game.onBlock(B_PROJECTILES, (r) => {
+      const n = r.u16(); const out = [];
+      for (let i = 0; i < n; i++) out.push({ id: r.u16(), kind: r.u8(), x: r.f32(), y: r.f32(), z: r.f32() });
+      return out;
+    }, (list) => this.shotFx.setProjectiles(list));
+    this.game.onBlock(B_ITEMS, readItems, (list) => this.loot.applyItems(list));
+    this.game.onBlock(B_CHESTS, readChests, (list) => this.loot.applyChests(list));
+    this.pieceHooks = {
+      added: (p) => { this.build.confirmSlot(p); this.pieceR.add(p); },
+      changed: (p) => this.pieceR.update(p),
+      removed: (p) => this.pieceR.remove(p),
+    };
+    this.propHooks = { changed: (p) => this.propR.paint(p), removed: (p) => this.propR.remove(p) };
+    this.avatars = new Map();
+    this.actions = [];
+    this.build = new BuildController(this);
+    this.loadout = new Loadout(this);
+    this.storm = new StormView(this);
+    this.map = new MapView(this, this.terrain.colors, this.base.terrain, this.base.pois, this.base.roads);
+    this.flow = new MatchFlow(this);
+    this.team = new TeamView(this);
+    this.lobby = new LobbyView(this);
+    this.pickaxeMesh = pickaxeMesh;
+    this.teammateMarks = () => this.team.marks();
+    this.mode = localStorage.getItem('sw.mode') || 'solo';
+    window.addEventListener('pointerdown', () => this.audio.unlock());
+    window.addEventListener('keydown', () => this.audio.unlock());
+    this.state = 'menu';
+    this.yaw = 0;
+    this.pitch = 0;
+    this.acc = 0;
+    this.last = performance.now();
+    this.fps = 60;
+    this.remote = [];
+
+    this.net = new Net();
+    this.net.on('json', (msg) => this.onJson(msg));
+    this.net.on('snapshot', (data) => this.onSnapshot(data));
+    this.net.on('close', () => this.onDisconnect());
+    this.net.on('open', () => { this.retries = 0; this.hello(); });
+    this.net.connect();
+
+    $('name').value = localStorage.getItem('sw.name') || '';
+    $('play').onclick = () => this.play();
+    $('cancel').onclick = () => { this.net.sendJson({ t: 'cancel' }); this.showQueue(false); };
+    for (const b of document.querySelectorAll('#modes button')) b.onclick = () => this.pickMode(b.dataset.mode);
+    this.pickMode(this.mode);
+    $('res-lobby').onclick = () => { this.net.sendJson({ t: 'leave' }); this.toLobby(); };
+    $('res-spectate').onclick = () => { $('results').hidden = true; };
+    $('name').addEventListener('keydown', (e) => { if (e.key === 'Enter') this.play(); });
+    $('click-to-play').onclick = () => this.input.lock();
+    document.addEventListener('pointerlockchange', () => this.updateLockPrompt());
+
+    $('loading').hidden = true;
+    $('menu').hidden = false;
+    this.loadRegions();
+    // No mouse and keyboard, no game: say so before anyone presses Play.
+    if (window.matchMedia?.('(pointer: coarse)').matches && !window.matchMedia?.('(any-pointer: fine)').matches) $('touch-note').hidden = false;
+    requestAnimationFrame((t) => this.frame(t));
+    // Some embedded views stop animation frames while not being painted; keep
+    // the simulation ticking anyway. Hidden tabs throttle this to 1 Hz, so it
+    // costs nothing there.
+    setInterval(() => { if (performance.now() - this.last > 120) this.frame(performance.now(), false); }, 50);
+  }
+
+  /** Draws every piece and prop of the client's current world copy. */
+  fillRenderers() {
+    for (const b of this.pieceR.buckets.values()) { this.gfx.scene.remove(b.mesh); b.mesh.dispose(); }
+    for (const b of this.propR.buckets.values()) { this.gfx.scene.remove(b.mesh); b.mesh.dispose(); }
+    this.pieceR.buckets.clear(); this.pieceR.where.clear(); this.pieceR.animating.clear();
+    this.propR.buckets.clear(); this.propR.where.clear();
+    for (const p of this.game.world.pieces.values()) this.pieceR.add(p);
+    for (const p of this.game.world.props) if (p && p.alive) this.propR.add(p);
+  }
+
+  onEvents(events) {
+    const meId = this.game.me?.id;
+    for (const e of events) {
+      const pos = { x: e.x, y: e.y, z: e.z };
+      switch (e.type) {
+        case EV_HARVEST:
+          this.fx.chips(e.x, e.y, e.z, e.b, e.c === 1);
+          this.audio.hit(pos, e.b, e.c === 1 && e.a === meId);
+          break;
+        case EV_BREAK:
+          this.fx.burst(e.x, e.y, e.z, { count: 26, color: [0xb07a44, 0x9a8f86, 0xa8b4bc][e.b] ?? 0x999999, speed: 6, size: 0.22, life: 1.1 });
+          this.audio.crumble(pos, e.b);
+          break;
+        case EV_SWING:
+          if (e.a !== meId) { const av = this.avatars.get(e.a); if (av) av.swingAt = performance.now(); this.audio.swing(pos); }
+          break;
+        case EV_SHOT: {
+          if (e.a === meId) break;           // our own shots were drawn when we fired
+          const av = this.avatars.get(e.a);
+          const key = itemKey(e.b);
+          const from = av ? { x: av.object.position.x, y: av.object.position.y + 1.4, z: av.object.position.z } : pos;
+          if (!WEAPONS[key]?.projectile) this.shotFx.tracer(from, pos);
+          this.audio.gun(from, WEAPONS[key]?.cls);
+          if (av) this.shotFx.muzzle(from);
+          break;
+        }
+        case EV_EXPLOSION: {
+          this.shotFx.explosion(e.x, e.y, e.z, e.b || 4);
+          this.fx.burst(e.x, e.y, e.z, { count: 30, color: 0x444444, speed: 9, size: 0.3, life: 1.2 });
+          this.audio.boom(pos);
+          const m = this.game.me?.move;
+          if (m) { const d = Math.hypot(m.x - e.x, m.y - e.y, m.z - e.z); if (d < 30) this.cam.shake = Math.max(this.cam.shake, 0.6 * (1 - d / 30)); }
+          break;
+        }
+        case EV_RELOAD: if (e.a !== meId) this.audio.reload(pos); else this.audio.reload(null); break;
+        case EV_CHEST:
+          this.audio.chestOpen(pos);
+          this.fx.burst(e.x, e.y + 0.6, e.z, { count: 18, color: 0xffd24a, speed: 3, size: 0.1, life: 0.9, gravity: 3 });
+          break;
+        case EV_PICKUP: if (e.a === meId) this.audio.pickup(); break;
+        case EV_IMPACT:
+          this.fx.burst(e.x, e.y, e.z, { count: 5, color: 0x8a7a5a, speed: 2, size: 0.08, life: 0.4 });
+          this.audio.hit(pos, 3, false);
+          break;
+        default:
+      }
+    }
+  }
+
+  pickMode(mode) {
+    this.mode = mode;
+    localStorage.setItem('sw.mode', mode);
+    for (const b of document.querySelectorAll('#modes button')) b.classList.toggle('on', b.dataset.mode === mode);
+    $('mode-hint').textContent = {
+      solo: '100 players, every one for themselves. Matches fill with bots.',
+      duos: 'Teams of two. Knocked players can be revived. Fills with bots.',
+      squads: 'Teams of four. Knocked players can be revived. Fills with bots.',
+      practice: 'A sandbox with a full kit and materials. Nobody wins here.',
+    }[mode];
+  }
+
+  /** Introduces this browser: its saved account if it has one, a new one otherwise. */
+  hello() {
+    let saved = {};
+    try { saved = JSON.parse(localStorage.getItem('sw.account') || '{}'); } catch { saved = {}; }
+    this.net.sendJson({ t: 'hello', name: ($('name').value || localStorage.getItem('sw.name') || 'Player').trim().slice(0, 16), id: saved.id || '', token: saved.token || '' });
+  }
+
+  play() {
+    const name = $('name').value.trim().slice(0, 16) || 'Player';
+    localStorage.setItem('sw.name', name);
+    this.audio.unlock();
+    this.hello();
+    if (this.mode === 'practice') this.net.sendJson({ t: 'practice' });
+    else { this.net.sendJson({ t: 'queue', mode: this.mode }); this.showQueue(true); }
+    this.input.lock();
+  }
+
+  showQueue(on, text = 'Finding a match…') {
+    $('queue-status').hidden = !on;
+    $('play').hidden = on;
+    $('queue-status').querySelector('span').textContent = text;
+  }
+
+  /** Back to the menu: the match is over or we left it. */
+  toLobby() {
+    this.state = 'menu';
+    this.flow.reset();
+    this.showQueue(false);
+    $('hud').hidden = true;
+    $('menu').hidden = false;
+    $('results').hidden = true;
+    $('vignette').className = 'vignette';
+    this.input.unlock();
+    this.updateLockPrompt();
+  }
+
+  onJson(msg) {
+    switch (msg.t) {
+      case 'welcome':
+        if (msg.hash !== this.base.hash) console.error(`World mismatch: server ${msg.hash}, client ${this.base.hash}`);
+        if (msg.account?.token) {
+          try { localStorage.setItem('sw.account', JSON.stringify({ id: msg.account.id, token: msg.account.token })); } catch { /* private window: a new account each visit */ }
+        }
+        break;
+      case 'profile': this.lobby.onProfile(msg); if (!$('name').value) $('name').value = msg.name; break;
+      case 'leaderboard': this.lobby.onLeaderboard(msg); break;
+      case 'shop': this.lobbyNote(msg.error); break;
+      case 'match':
+        if (this.game.freshWorld(msg.id)) { this.fillRenderers(); this.loot.clear(); this.storm.clear(); }
+        this.flow.reset();
+        this.team.reset();
+        this.killTally = new Map();
+        this.damageDealt = 0;
+        this.showQueue(false);
+        this.game.start(msg);
+        this.state = 'match';
+        $('menu').hidden = true;
+        $('hud').hidden = false;
+        $('play').disabled = false;
+        this.updateLockPrompt();
+        break;
+      case 'hurt': this.flash(); break;
+      case 'died':
+        this.flow.spectating = msg.by;
+        $('vignette').classList.add('dead');
+        this.toast(msg.cause === 'fall' ? 'YOU FELL TO YOUR DEATH' : 'ELIMINATED', 3000);
+        break;
+      case 'respawned':
+        $('vignette').classList.remove('dead');
+        this.toast('BACK ON YOUR FEET', 1500);
+        break;
+      case 'inv':
+        this.mats = msg.mats;
+        this.updateInventory(msg);
+        this.loadout.sync(msg);
+        break;
+      case 'hit': this.loadout.onHit(msg); this.damageDealt = (this.damageDealt || 0) + msg.dmg; break;
+      case 'storm': this.storm.set(msg); break;
+      case 'phase': this.flow.onPhase(msg); break;
+      case 'alive': this.flow.onAlive(msg); break;
+      case 'results': this.flow.onResults(msg); $('res-extra').innerHTML = this.lobby.resultsExtras(msg); break;
+      case 'roster': for (const p of msg.players) this.game.roster.set(p.id, p); break;
+      case 'team': this.team.onTeam(msg); break;
+      case 'ping': this.team.onPing(msg); break;
+      case 'reviving': this.team.onReviving(msg); break;
+      case 'knocked': this.toast("YOU'RE DOWN — crawl to your team", 2500); $('vignette').classList.add('show'); break;
+      case 'revived': this.toast('BACK ON YOUR FEET', 1500); this.team.revive = null; break;
+      case 'queue': this.showQueue(true, `Waiting for a free server slot — ${msg.position} in line`); break;
+      case 'lobby': this.toLobby(); if (msg.reason && !/over|left|cancel/.test(msg.reason)) this.lobbyNote?.(msg.reason); break;
+      case 'resumed': this.toast('BACK IN THE MATCH', 1500); break;
+      case 'note': this.hudNote(msg.text); break;
+      case 'feed': this.addFeed(msg); this.flow.onFeed(msg); break;
+      case 'weak': this.weak.show(msg.x === undefined ? null : msg); break;
+      case 'build-denied': this.build.denied(msg); break;
+      case 'joined': this.game.roster.set(msg.player.id, msg.player); break;
+      case 'left': this.game.roster.delete(msg.id); break;
+      default:
+    }
+  }
+
+  flash() {
+    const v = $('vignette');
+    v.classList.add('show');
+    clearTimeout(this.flashTimer);
+    this.flashTimer = setTimeout(() => v.classList.remove('show'), 120);
+  }
+
+  toast(text, ms = 2000) {
+    const t = $('toast');
+    t.textContent = text;
+    t.classList.add('show');
+    clearTimeout(this.toastTimer);
+    this.toastTimer = setTimeout(() => t.classList.remove('show'), ms);
+  }
+
+  onSnapshot(data) {
+    const snap = this.game.onSnapshot(data, performance.now());
+    if (snap && snap.self && !this.aimed) {
+      this.aimed = true;
+      this.yaw = 0; this.pitch = -0.1;
+    }
+  }
+
+  /**
+   * Lost the connection: keep the match on screen and try again, backing off.
+   * The server puts us straight back into our match when we reconnect.
+   */
+  onDisconnect() {
+    this.retries = (this.retries || 0) + 1;
+    const wait = Math.min(8000, 800 * this.retries);
+    if (this.state === 'match') this.toast('CONNECTION LOST — RECONNECTING…', wait + 2000);
+    clearTimeout(this.reconnectTimer);
+    this.reconnectTimer = setTimeout(() => this.net.connect(), wait);
+  }
+
+  updateLockPrompt() {
+    $('click-to-play').hidden = !(this.state === 'match' && !this.input.locked);
+  }
+
+  /* ------------------------------------------------------------ loop */
+
+  frame(now, fromRaf = true) {
+    const dt = Math.min(0.1, (now - this.last) / 1000);
+    this.last = now;
+    if (fromRaf) this.fps = this.fps * 0.95 + (1 / Math.max(dt, 1e-3)) * 0.05;
+    if (this.state === 'match' && this.game.me) this.matchFrame(now, dt);
+    else this.menuFrame(now, dt);
+    if (!fromRaf) return;
+    this.gfx.renderer.render(this.gfx.scene, this.gfx.camera);
+    requestAnimationFrame((t) => this.frame(t));
+  }
+
+  menuFrame(now) {
+    // A slow flight around the island behind the menu.
+    const a = now / 40000;
+    const cam = this.gfx.camera;
+    cam.position.set(2560 + Math.cos(a) * 1500, 420, 2560 + Math.sin(a) * 1500);
+    cam.lookAt(2560, 30, 2560);
+    this.terrain.update(cam.position);
+    this.gfx.follow(cam.position, 420);
+  }
+
+  matchFrame(now, dt) {
+    const game = this.game;
+    const mouse = this.input.takeMouse();
+    if (this.input.locked) {
+      this.yaw -= mouse.dx * this.input.sensitivity;
+      this.pitch = Math.max(-1.45, Math.min(1.45, this.pitch - mouse.dy * this.input.sensitivity));
+    }
+    game.advanceRender(now, dt * 1000);
+    this.handlePresses(mouse.wheel);
+
+    // Fixed-rate ticks: sample input, predict, send.
+    this.acc += dt * 1000;
+    let ticks = 0;
+    while (this.acc >= TICK_MS && ticks < 4) {
+      this.acc -= TICK_MS;
+      ticks++;
+      const input = this.sampleInput();
+      game.predict(input);
+      this.net.sendInput(input);
+      if (this.loadout.held === 0) this.predictSwing(input, now);
+      else this.loadout.predict(input, now);
+    }
+    if (this.acc > TICK_MS * 4) this.acc = 0;
+
+    const alpha = this.acc / TICK_MS;
+    const me = game.me;
+    const pos = game.localRenderPos(alpha, dt);
+    const renderMove = { ...me.move, x: pos.x, y: pos.y, z: pos.z };
+    const ads = ((this.input.mouse.right && this.input.locked) || (this.forceButtons & BTN_ADS)) && this.build.mode === 'weapon';
+    const w = this.loadout.weapon;
+    const scope = ads && w && WEAPONS[w.key].scope;
+    const view = this.flow.frame(dt, me);
+    if (view?.pos) {
+      // Riding the blimp: orbit it.
+      this.gfx.camera.position.copy(view.pos);
+      this.gfx.camera.lookAt(view.look);
+    } else if (view?.spectate) {
+      const s = view.spectate;
+      this.cam.update(dt, { x: s.x, y: s.y, z: s.z, crouch: s.flags & 1, mode: s.mode }, s.yaw, s.pitch, false, game.world.grid, 55);
+    } else this.cam.update(dt, renderMove, this.yaw, this.pitch, ads, game.world.grid, scope || 55);
+    $('crosshair').style.setProperty('--spread', `${this.loadout.crosshairGap(ads)}px`);
+    $('crosshair').hidden = !!scope && this.cam.adsBlend > 0.8;
+    $('scope').hidden = !(scope && this.cam.adsBlend > 0.8);
+    this.loadout.frame(dt);
+    this.shotFx.update(dt);
+    this.loot.frame(dt, this.gfx.camera.position, pos);
+    this.updatePrompt(pos);
+    this.updateScoreboard();
+    this.announcePlace(pos);
+    this.team.frame(dt);
+    this.storm.frame(dt, pos);
+    this.map.frame(pos, this.yaw, this.storm.state, this.teammateMarks?.() || []);
+
+    this.drawPlayers(dt, pos);
+    this.pieceR.frame(game.renderTick);
+    this.build.frame(this.input.mouse.left);
+    this.fx.update(dt);
+    this.weak.update(dt);
+    this.audio.listen(this.gfx.camera);
+    this.propR.cull(this.gfx.camera.position, this.gfx.scene.fog.far);
+    this.terrain.update(this.gfx.camera.position);
+    const ground = this.base.terrain.heightAt(pos.x, pos.z);
+    this.gfx.follow(pos, this.gfx.camera.position.y - ground);
+    this.updateHud(pos);
+  }
+
+  /** Shows the pickaxe swing straight away; the server decides what it hits. */
+  predictSwing(input, now) {
+    if (!(input.buttons & BTN_FIRE) || now - this.swingAt < 500) return;
+    this.swingAt = now;
+    const m = this.game.me.move;
+    this.audio.swing({ x: m.x, y: m.y + 1.5, z: m.z });
+  }
+
+  updateInventory(msg) {
+    this.mats = msg.mats.slice();
+    this.updateMats();
+  }
+
+  updateMats() {
+    for (let i = 0; i < 3; i++) {
+      const el = document.getElementById(`mat-${i}`);
+      el.textContent = this.mats[i];
+      el.parentElement.classList.toggle('selected', this.build.mode === 'build' && this.build.mat === i);
+    }
+  }
+
+  queueAction(a) { this.actions.push(a); }
+
+  lobbyNote(text, ms = 3000) {
+    const n = $('lobby-note');
+    n.textContent = text; n.hidden = false;
+    clearTimeout(this.lobbyNoteTimer);
+    this.lobbyNoteTimer = setTimeout(() => { n.hidden = true; }, ms);
+  }
+
+  /**
+   * Which server to play on. Each region is its own server; this page is
+   * served by one of them. With several configured, the lobby lists them with
+   * their ping and switching region loads that one's page.
+   */
+  async loadRegions() {
+    let regions = [];
+    try { regions = (await (await fetch('./regions')).json()).regions || []; } catch { return; }
+    const here = regions.find((r) => !r.url) || regions[0];
+    const el = $('region');
+    const show = () => {
+      const ms = Math.round(this.net.rtt);
+      if (regions.length < 2) { el.textContent = `Server: ${here?.name || 'Main'}${ms ? ` · ${ms} ms` : ''}`; return; }
+      el.innerHTML = `<select id="region-pick">${regions.map((r) => `<option value="${esc(r.url)}" ${r === here ? 'selected' : ''}>${esc(r.name)}${r === here && ms ? ` · ${ms} ms` : ''}</option>`).join('')}</select>`;
+      $('region-pick').onchange = (e) => { if (e.target.value) window.location.href = e.target.value; };
+    };
+    show();
+    setInterval(show, 5000);
+  }
+  yawQ() { return quantizeYaw(this.yaw); }
+  pitchQ() { return quantizePitch(this.pitch); }
+
+  onBuildMode() {
+    const b = this.build;
+    document.querySelectorAll('#buildbar .piece').forEach((el, i) => el.classList.toggle('active', b.mode === 'build' && b.piece === i));
+    $('buildbar').classList.toggle('on', b.mode !== 'weapon');
+    $('buildbar').dataset.mode = b.mode;
+    this.updateMats();
+  }
+
+  hudNote(text) {
+    const n = $('note');
+    n.textContent = text;
+    n.classList.add('show');
+    clearTimeout(this.noteTimer);
+    this.noteTimer = setTimeout(() => n.classList.remove('show'), 1200);
+  }
+
+  /** Key presses and clicks, handled once per frame. */
+  handlePresses(wheel) {
+    for (const action of this.input.takePresses()) {
+      if (this.build.onPress(action)) continue;
+      if (this.loadout.onPress(action)) continue;
+      if (action === 'ping') { this.team.ping(); continue; }
+      if (action === 'interact' && this.reviveTargetState) { this.team.startRevive(this.reviveTargetState.id); continue; }
+      if (action === 'interact' && this.interactTarget) {
+        const t = this.interactTarget;
+        this.queueAction({ type: A_INTERACT, kind: t.kind === 'chest' ? 2 : 1, id: t.id });
+        continue;
+      }
+      if (action === 'drop' && this.loadout.held > 0) { this.queueAction({ type: A_DROP, slot: this.loadout.held }); continue; }
+      if (action === 'map') { this.map.toggle(); continue; }
+      if (action === 'jump' && this.game.me?.move.mode === MODE_BUS) { this.flow.jump(); continue; }
+      this.onPress?.(action);
+    }
+    for (const button of this.input.takeClicks()) {
+      if (this.build.onClick(button)) continue;
+      if (button === 'left') this.loadout.clicked = true;
+    }
+    if (wheel && this.build.mode === 'weapon') this.loadout.wheel(wheel);
+  }
+
+  /** "E — Pick up …" for whatever is in reach and nearest the crosshair. */
+  updatePrompt(pos) {
+    const walking = this.game.me.move.mode === 0;
+    const mate = walking ? this.team.reviveTarget(pos) : null;
+    this.reviveTargetState = mate;
+    const t = walking && !mate ? this.loot.target(pos, viewDir(this.yaw, this.pitch, {})) : null;
+    this.interactTarget = t;
+    const el = $('prompt');
+    if (mate) {
+      el.hidden = !!this.team.revive;
+      el.innerHTML = `<kbd>E</kbd> Hold to revive <b>${esc(this.game.roster.get(mate.id)?.name || '')}</b>`;
+      return;
+    }
+    if (!t) { el.hidden = true; return; }
+    el.hidden = false;
+    if (t.kind === 'chest') el.innerHTML = '<kbd>E</kbd> Open chest';
+    else {
+      const it = { key: t.o.key, rarity: t.rec.rarity };
+      el.innerHTML = `<kbd>E</kbd> Pick up <b class="r${t.rec.rarity}">${esc(itemName(it))}</b>${t.rec.count > 1 && !WEAPONS[t.o.key] ? ` ×${t.rec.count}` : ''}`;
+    }
+  }
+
+  /** Crossing into a named place puts its name on screen, like a road sign. */
+  announcePlace(pos) {
+    const m = this.game.me.move;
+    if (m.mode !== 0 && m.mode !== 2) return;
+    const here = this.base.pois.find((p) => Math.hypot(p.x - pos.x, p.z - pos.z) < p.r);
+    if (here && here !== this.lastPlace) this.toast(here.name.toUpperCase(), 2200);
+    this.lastPlace = here || (this.lastPlace && Math.hypot(this.lastPlace.x - pos.x, this.lastPlace.z - pos.z) < this.lastPlace.r + 40 ? this.lastPlace : null);
+  }
+
+  /** Hold Tab: players left, your match so far, and who is running up the eliminations. */
+  updateScoreboard() {
+    const el = $('scoreboard');
+    const show = this.input.held('scoreboard') && this.state === 'match';
+    el.hidden = !show;
+    if (!show) return;
+    const me = this.game.me;
+    const top = [...(this.killTally || new Map())].sort((a, b) => b[1] - a[1]).slice(0, 5);
+    const name = (id) => esc(this.game.roster.get(id)?.name || '???');
+    el.innerHTML = `<h3>${esc((this.game.mode || '').toUpperCase())}</h3>`
+      + `<div class="row"><span>Players left</span><b>${this.flow.alive || '—'}</b></div>`
+      + `<div class="row"><span>Your eliminations</span><b>${this.flow.kills}</b></div>`
+      + `<div class="row"><span>Damage you have dealt</span><b>${Math.round(this.damageDealt || 0)}</b></div>`
+      + (top.length ? `<small>MOST ELIMINATIONS</small>${top.map(([id, n]) => `<div class="row ${id === me?.id ? 'me' : ''}"><span>${name(id)}</span><b>${n}</b></div>`).join('')}` : '');
+  }
+
+  addFeed(msg) {
+    if (msg.killer && msg.killer !== msg.victim) {
+      this.killTally = this.killTally || new Map();
+      this.killTally.set(msg.killer, (this.killTally.get(msg.killer) || 0) + 1);
+    }
+    const name = (id) => this.game.roster.get(id)?.name || '???';
+    const li = document.createElement('li');
+    const how = msg.cause === 'fall' ? 'fell to their death' : msg.cause === 'storm' ? 'was lost to the storm' : msg.cause === 'quit' ? 'left the match' : null;
+    const meId = this.game.me?.id;
+    if (msg.killer && !how) li.innerHTML = `<b class="${msg.killer === meId ? 'me' : ''}">${esc(name(msg.killer))}</b> <i>${esc(WEAPONS[msg.weapon]?.name || (msg.cause === 'pickaxe' ? 'Pickaxe' : 'eliminated'))}${msg.head ? ' ✦' : ''}</i> <b class="${msg.victim === meId ? 'me' : ''}">${esc(name(msg.victim))}</b>`;
+    else li.innerHTML = `<b class="${msg.victim === meId ? 'me' : ''}">${esc(name(msg.victim))}</b> <i>${how || 'was eliminated'}</i>`;
+    $('feed').prepend(li);
+    while ($('feed').children.length > 6) $('feed').lastChild.remove();
+    setTimeout(() => li.classList.add('old'), 6000);
+    setTimeout(() => li.remove(), 7000);
+    if (msg.killer === meId && msg.victim !== meId) this.toast(`ELIMINATED ${name(msg.victim).toUpperCase()}`, 1800);
+  }
+
+  sampleInput() {
+    const inp = this.input;
+    // Keys work whenever a match is on screen; the mouse only once it is captured.
+    const active = this.state === 'match';
+    const mouseOn = inp.locked;
+    const axis = (a, b) => (active ? (inp.held(a) ? 1 : 0) - (inp.held(b) ? 1 : 0) : 0);
+    let buttons = 0;
+    if (active) {
+      if (inp.held('jump')) buttons |= BTN_JUMP;
+      if (inp.held('sprint')) buttons |= BTN_SPRINT;
+      if (inp.held('crouch')) buttons |= BTN_CROUCH;
+      const weapon = this.build.mode === 'weapon';
+      if (weapon && this.loadout.fireButton(mouseOn && inp.mouse.left)) buttons |= BTN_FIRE;
+      if (weapon && mouseOn && inp.mouse.right) buttons |= BTN_ADS;
+      if (inp.held('interact')) buttons |= BTN_USE;
+      buttons |= this.forceButtons || 0;     // test hook: hold buttons without a captured mouse
+    }
+    return {
+      mx: axis('right', 'left'), mz: axis('forward', 'back'),
+      yaw: quantizeYaw(this.yaw), pitch: quantizePitch(this.pitch), buttons, actions: this.actions.splice(0, 16),
+    };
+  }
+
+  drawPlayers(dt, pos) {
+    const game = this.game;
+    const seen = new Set();
+    const me = game.me;
+    const mine = this.avatarFor(me.id);
+    const sp = Math.sqrt(me.move.vx * me.move.vx + me.move.vz * me.move.vz);
+    const now = performance.now();
+    const held = this.build.mode !== 'weapon' ? 255 : this.loadout.item ? itemId(this.loadout.item.key) : 0;
+    this.holdFor(mine, me.id, held, this.loadout.item?.rarity || 0);
+    const cams = this.gfx.camera.position;
+    mine.object.visible = cams.distanceToSquared(mine.object.position) > 0.8;
+    mine.update(dt, { ...me.move, x: pos.x, y: pos.y, z: pos.z, yaw: this.yaw, pitch: this.pitch, speed: sp, armed: held !== 0 && held !== 255, swing: held === 0 ? swingPhase(now - this.swingAt) : 0 });
+    seen.add(me.id);
+    for (const s of game.remoteStates(this.remote)) {
+      const av = this.avatarFor(s.id);
+      this.holdFor(av, s.id, s.held, s.rarity);
+      av.update(dt, { ...s, crouch: s.flags & 1, ground: s.flags & 32, armed: s.held !== 0 && s.held !== 255, swing: s.held === 0 ? swingPhase(performance.now() - (av.swingAt || -1e9)) : 0 });
+      seen.add(s.id);
+    }
+    for (const [id, av] of this.avatars) {
+      if (!seen.has(id)) { this.gfx.scene.remove(av.object); this.avatars.delete(id); }
+    }
+  }
+
+  /** Puts the right thing in an avatar's hand: pickaxe (0), nothing (255, building) or an item. */
+  holdFor(av, id, held, rarity) {
+    if (held === 0) av.hold('pickaxe', () => pickaxeMesh(this.game.roster.get(id)?.pickaxe || 0));
+    else if (held === 255 || !held) av.hold(null);
+    else av.hold(`${held}:${rarity}`, () => handModel(held, rarity));
+  }
+
+  avatarFor(id) {
+    let av = this.avatars.get(id);
+    if (!av) {
+      const meta = this.game.roster.get(id) || {};
+      av = new Avatar(meta.outfit || 0, meta.glider || 0);
+      this.avatars.set(id, av);
+      this.gfx.scene.add(av.object);
+    }
+    return av;
+  }
+
+  updateHud(pos) {
+    const me = this.game.me;
+    const down = me.move.mode === MODE_DBNO_LOCAL;
+    const mine = this.team.members.find((m) => m.id === me.id);
+    const hp = down && mine ? mine.dbno : me.hp;
+    $('hp-fill').style.transform = `scaleX(${Math.max(0, hp) / 100})`;
+    $('hp-fill').parentElement.classList.toggle('down', down);
+    $('hp-num').textContent = Math.ceil(hp);
+    $('shield-fill').style.transform = `scaleX(${Math.max(0, me.shield) / 100})`;
+    $('shield-num').textContent = Math.ceil(me.shield);
+    if (!this.debugAt || performance.now() - this.debugAt > 250) {
+      this.debugAt = performance.now();
+      $('debug').textContent = `${Math.round(this.fps)} fps · ${Math.round(this.net.rtt)} ms · ${this.game.players.size + 1} near`
+        + `\n${pos.x.toFixed(1)} ${pos.y.toFixed(1)} ${pos.z.toFixed(1)} · gen ${Math.round(this.genMs)} ms`;
+    }
+  }
+}
+
+const MODE_DBNO_LOCAL = 4;
+const esc = (t) => String(t).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+
+/** 0‥1 through a pickaxe swing that started `ms` ago, 0 when not swinging. */
+function swingPhase(ms) { return ms >= 0 && ms < 350 ? ms / 350 : 0; }
+
+function pickaxeMesh(id) {
+  const def = PICKAXES[id] || PICKAXES[0];
+  const g = new THREE.Group();
+  const handle = new THREE.Mesh(new THREE.BoxGeometry(0.05, 0.85, 0.05), mat(def.handle));
+  handle.position.y = -0.3;
+  const head = new THREE.Mesh(new THREE.BoxGeometry(0.08, 0.1, 0.62), mat(def.head));
+  head.position.set(0, -0.68, -0.06);
+  const tip = new THREE.Mesh(new THREE.BoxGeometry(0.06, 0.06, 0.18), mat(def.head));
+  tip.position.set(0, -0.72, -0.42);
+  tip.rotation.x = -0.4;
+  g.add(handle, head, tip);
+  g.rotation.x = -0.5;
+  for (const m of g.children) m.castShadow = true;
+  return g;
+}
+
+const app = new App();
+window.stormwall = app;
+app.boot().catch((error) => {
+  console.error(error);
+  $('loading-text').textContent = `Something went wrong: ${error.message}`;
+});
+void THREE; void eyeHeight;

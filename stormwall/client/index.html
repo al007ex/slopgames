@@ -1,0 +1,146 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<meta name="theme-color" content="#101624" />
+<title>STORMWALL — build, fight, outlast the storm</title>
+<meta name="description" content="A 100-player build-and-shoot battle royale in the browser. Drop from the blimp, harvest, build, loot and be the last one standing as the storm closes in." />
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect width='32' height='32' rx='7' fill='%23101624'/><path d='M6 26V12l10-6 10 6v14h-6v-8h-8v8z' fill='%23ffcf3f'/><circle cx='16' cy='16' r='13' fill='none' stroke='%239b6cff' stroke-width='2.5'/></svg>" />
+<link rel="stylesheet" href="./css/style.css" />
+<script type="importmap">
+{ "imports": { "three": "./vendor/three.module.js", "#shared/": "./shared/" } }
+</script>
+</head>
+<body>
+<canvas id="view"></canvas>
+
+<div id="storm-tint" class="storm-tint"></div>
+<div id="vignette" class="vignette"></div>
+<div id="hud" hidden>
+  <div id="crosshair" class="crosshair"><i></i><i></i><i></i><i></i><b></b></div>
+  <div id="hitmarker" class="hitmarker"></div>
+  <div class="vitals">
+    <div class="bar shield"><span id="shield-fill"></span><b id="shield-num">0</b></div>
+    <div class="bar health"><span id="hp-fill"></span><b id="hp-num">100</b></div>
+  </div>
+  <div id="note" class="note"></div>
+  <div id="banner" class="banner" hidden></div>
+  <div id="team" class="team"></div>
+  <div id="revive" class="progress revive" hidden><span></span><b></b></div>
+  <div id="jump-prompt" class="jump-prompt" hidden></div>
+  <div id="spectating" class="spectating" hidden></div>
+  <ol id="feed" class="feed"></ol>
+  <div class="topright">
+    <canvas id="minimap" class="minimap" width="200" height="200"></canvas>
+    <div id="storm-timer" class="storm-timer" hidden><i></i><span></span> <b></b></div>
+    <div id="storm-dist" class="storm-dist"></div>
+    <div id="counters" class="counters"></div>
+  </div>
+  <div id="scoreboard" class="scoreboard" hidden></div>
+  <div id="mapview" class="mapview" hidden><canvas id="fullmap" width="900" height="900"></canvas><p>M to close</p></div>
+  <div id="prompt" class="prompt" hidden></div>
+  <div id="scope" class="scope" hidden></div>
+  <div id="progress" class="progress" hidden><span></span><b></b></div>
+  <div id="buildbar" class="buildbar">
+    <div class="piece"><svg viewBox="0 0 24 24"><rect x="4" y="3" width="16" height="18" rx="1"/></svg><em>Q</em></div>
+    <div class="piece"><svg viewBox="0 0 24 24"><path d="M2 15 12 10l10 5-10 5z"/></svg><em>F</em></div>
+    <div class="piece"><svg viewBox="0 0 24 24"><path d="M3 20 20 5v15z"/></svg><em>Z</em></div>
+    <div class="piece"><svg viewBox="0 0 24 24"><path d="M2 18 12 5l10 13z"/></svg><em>X</em></div>
+    <span class="build-hint">LMB place · RMB material · G edit · B exit</span>
+  </div>
+  <div class="loadout">
+    <div class="mats">
+      <div class="mat wood"><i></i><b id="mat-0">0</b></div>
+      <div class="mat stone"><i></i><b id="mat-1">0</b></div>
+      <div class="mat metal"><i></i><b id="mat-2">0</b></div>
+    </div>
+    <div class="held"><b id="item-name"></b><span id="ammo" class="ammo"></span></div>
+    <div id="hotbar" class="hotbar"></div>
+  </div>
+  <div id="debug" class="debug"></div>
+  <div id="toast" class="toast"></div>
+</div>
+
+<section id="loading" class="screen">
+  <div class="card">
+    <h1 class="logo">STORM<span>WALL</span></h1>
+    <p id="loading-text">Raising the island…</p>
+    <i class="spinner"></i>
+  </div>
+</section>
+
+<section id="menu" class="screen" hidden>
+  <div class="lobby-shell">
+    <header class="lobby-top">
+      <h1 class="logo small">STORM<span>WALL</span></h1>
+      <div class="level" title="Your level"><span class="lv">LV <b id="lv-num">1</b></span><div class="xpbar"><i id="xp-fill"></i></div><small id="xp-text">0 XP</small></div>
+      <div class="coins" title="Coins — earned by playing"><span>◈</span><b id="coins">0</b></div>
+      <div id="region" class="region"></div>
+    </header>
+    <p id="lobby-note" class="lobby-note" hidden></p>
+    <nav id="lobby-tabs" class="lobby-tabs">
+      <button type="button" data-tab="play" class="on">Play</button>
+      <button type="button" data-tab="locker">Locker</button>
+      <button type="button" data-tab="challenges">Challenges</button>
+      <button type="button" data-tab="career">Career</button>
+    </nav>
+    <div class="panel" id="panel-play">
+      <p class="tag">Drop in. Build up. Outlast the storm.</p>
+      <input id="name" type="text" maxlength="16" placeholder="Your name" autocomplete="off" spellcheck="false" />
+      <div id="modes" class="modes" role="tablist">
+        <button type="button" data-mode="solo" class="on">Solo</button>
+        <button type="button" data-mode="duos">Duos</button>
+        <button type="button" data-mode="squads">Squads</button>
+        <button type="button" data-mode="practice">Practice</button>
+      </div>
+      <p id="mode-hint" class="hint mode-hint"></p>
+      <button id="play" class="play" type="button">Play</button>
+      <div id="queue-status" class="queue-status" hidden><i class="spinner"></i><span>Finding a match…</span><button id="cancel" class="ghost" type="button">Cancel</button></div>
+      <p id="touch-note" class="hint touch-note" hidden>Stormwall is played with a keyboard and mouse — on a phone or tablet you can look around the lobby, but you will need a computer to play.</p>
+      <p class="hint">WASD move · Shift sprint · Space jump · C crouch · mouse aim · Q/F/Z/X build · G edit · E use · T ping · M map · Tab scores</p>
+    </div>
+    <div class="panel locker" id="panel-locker" hidden>
+      <canvas id="locker-preview" class="preview"></canvas>
+      <div>
+        <div id="locker-kinds" class="seg"><button type="button" data-kind="outfit" class="on">Outfits</button><button type="button" data-kind="glider">Gliders</button><button type="button" data-kind="pickaxe">Pickaxes</button></div>
+        <div id="locker-items" class="items"></div>
+        <p class="hint">Cosmetics only change how you look. Coins (◈) are earned by playing — there is nothing to buy with real money.</p>
+      </div>
+    </div>
+    <div class="panel" id="panel-challenges" hidden>
+      <h3>Today's challenges</h3>
+      <p id="challenge-reset" class="hint"></p>
+      <div id="challenge-list"></div>
+    </div>
+    <div class="panel" id="panel-career" hidden>
+      <dl id="career-stats" class="career"></dl>
+      <div id="board-kinds" class="seg"><button type="button" data-board="wins" class="on">Wins</button><button type="button" data-board="kills">Eliminations</button><button type="button" data-board="level">Level</button></div>
+      <div id="board" class="board"></div>
+    </div>
+  </div>
+</section>
+
+<section id="results" class="screen results" hidden>
+  <div class="card">
+    <p class="kicker" id="res-place">#1</p>
+    <p class="res-sub" id="res-sub"></p>
+    <dl class="res-stats">
+      <div><dt>Eliminations</dt><dd id="res-kills">0</dd></div>
+      <div><dt>Damage</dt><dd id="res-damage">0</dd></div>
+      <div><dt>Survived</dt><dd id="res-time">0:00</dd></div>
+    </dl>
+    <p class="res-xp" id="res-xp"></p>
+    <p class="res-extra" id="res-extra"></p>
+    <button id="res-lobby" class="play" type="button">Back to lobby</button>
+    <button id="res-spectate" class="ghost" type="button">Spectate</button>
+  </div>
+</section>
+
+<section id="click-to-play" class="screen clear" hidden>
+  <div class="card small"><p>Click to take control</p><p class="hint">Esc releases the mouse</p></div>
+</section>
+
+<script type="module" src="./js/main.js"></script>
+</body>
+</html>

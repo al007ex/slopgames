@@ -20,6 +20,19 @@ const origin = process.env.SITE_ORIGIN || 'https://slopgames.al007ex.com';
 // One entry per game. `dir`, `port` and `health` drive the launcher; the rest is
 // presentation, so adding a game to the arcade means adding an object here.
 const games = {
+  stormwall: {
+    name: 'Stormwall',
+    dir: path.join(root, 'stormwall'),
+    port: 3205,
+    health: '/health',
+    description: 'A 100-player build-and-shoot battle royale.',
+    blurb: 'Drop from the blimp, harvest everything, throw up walls and ramps in a heartbeat, and be the last one standing as the storm closes in. Solo, duos or squads, with bots filling every empty seat.',
+    art: '/assets/art/stormwall.jpg',
+    tags: ['battle royale', 'building', 'shooter', 'multiplayer'],
+    players: '100-PLAYER BATTLE ROYALE',
+    featured: true,
+    state: 'stopped', process: null, sessions: new Map(), lastActivity: 0, startPromise: null,
+  },
   glowworm: {
     name: 'Glowworm',
     dir: path.join(root, 'glowworm'),
@@ -30,7 +43,6 @@ const games = {
     art: '/assets/art/glowworm.jpg',
     tags: ['multiplayer', 'io', 'snake'],
     players: 'LIVE MULTIPLAYER',
-    featured: true,
     state: 'stopped', process: null, sessions: new Map(), lastActivity: 0, startPromise: null,
   },
   duostrike: {
@@ -270,7 +282,7 @@ function homePage() {
   const entries = Object.entries(games);
   const featured = entries.find(([, game]) => game.featured)?.[1] || entries[0][1];
   const tags = ['all', ...new Set(entries.flatMap(([, game]) => game.tags))];
-  const description = 'Play free browser games on Slopgames — no download, no install. Launch Glowworm, DuoStrike, Pixel Brawl or Circuit Breaker and play instantly.';
+  const description = 'Play free browser games on Slopgames — no download, no install. Launch Stormwall, Glowworm, DuoStrike, Pixel Brawl or Circuit Breaker and play instantly.';
   // The 2x2 featured tile only earns its space once there are enough games to
   // wrap around it; below that every tile stays the same size and fills the row.
   const mosaic = entries.length >= 5;
