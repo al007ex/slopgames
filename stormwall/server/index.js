@@ -18,6 +18,14 @@ const here = path.dirname(fileURLToPath(import.meta.url));
 const root = path.resolve(here, '..');
 
 const MAX_CONNECTIONS = 220;
+// Where this server is, and any others a client could pick from. One entry per
+// region; `url` is where that region's game is served ('' = this one).
+const REGION = process.env.REGION_NAME || 'Main';
+const REGIONS = (() => {
+  try { if (process.env.REGIONS) return JSON.parse(process.env.REGIONS); } catch { /* fall through */ }
+  return [{ id: REGION.toLowerCase(), name: REGION, url: '' }];
+})();
+const MATCH_FAILURE_LIMIT = 5;
 const MAX_PER_IP = 12;
 const BACKLOG_SKIP = 512 * 1024;
 const BACKLOG_DROP = 8 * 1024 * 1024;
@@ -99,6 +107,7 @@ export async function startServer({ port = 3500, host, log = console.log, seed, 
         tick: [...matches].map((m) => ({ id: m.id, mode: m.mode, players: m.players.size, ...m.tickStats() })),
       });
     }
+    if (url.pathname === '/regions') return reply(res, 200, { regions: REGIONS });
     if (url.pathname.startsWith('/shared/')) return sendFile(res, path.join(root, 'shared'), url.pathname.slice(8));
     if (url.pathname.startsWith('/vendor/')) {
       return sendFile(res, path.join(root, 'node_modules', 'three', 'build'), url.pathname.slice(8), 'public, max-age=86400');
@@ -176,8 +185,9 @@ export async function startServer({ port = 3500, host, log = console.log, seed, 
         conn.account = account;
         conn.name = account.name;
         conn.outfit = account.equipped.outfit; conn.glider = account.equipped.glider; conn.pickaxe = account.equipped.pickaxe;
-        conn.sendJson({ t: 'welcome', conn: conn.id, hash: base.hash, seed: base.seed, tickHz: TICK_HZ, account: { id: account.id, token } });
+        conn.sendJson({ t: 'welcome', conn: conn.id, hash: base.hash, seed: base.seed, tickHz: TICK_HZ, account: { id: account.id, token }, region: REGION });
         conn.sendJson(accounts.profile(account));
+        if (!conn.match) lobby.resume(conn);
         return;
       }
       case 'profile':
@@ -252,6 +262,14 @@ export async function startServer({ port = 3500, host, log = console.log, seed, 
     ws.on('error', () => {});
   });
 
+  function abortMatch(match, reason) {
+    for (const conn of [...match.conns]) { conn.detach(); conn.sendJson({ t: 'lobby', reason }); }
+    matches.delete(match);
+    for (const [mode, m] of lobby.forming) if (m === match) lobby.forming.delete(mode);
+    if (sandbox === match) sandbox = null;
+  }
+  game.abortMatch = abortMatch;
+
   // A fixed-rate loop that corrects its own drift: if a tick runs late, the
   // next one is scheduled sooner, and a long stall is caught up (up to a point).
   let running = true;
@@ -263,9 +281,18 @@ export async function startServer({ port = 3500, host, log = console.log, seed, 
     let steps = 0;
     while (now >= next && steps < 4) {
       for (const match of matches) {
-        try { match.step(); } catch (error) { log?.(`[match ${match.id}] tick failed: ${error.stack || error}`); }
+        try {
+          match.step();
+          match.failures = 0;
+        } catch (error) {
+          // One bad match must not take down the others. A match that keeps
+          // failing is shut down and its players are sent back to the lobby.
+          match.failures = (match.failures || 0) + 1;
+          log?.(`[match ${match.id}] tick failed (${match.failures}): ${error.stack || error}`);
+          if (match.failures >= MATCH_FAILURE_LIMIT) abortMatch(match, 'the match hit a problem and was stopped');
+        }
       }
-      lobby.tick();
+      try { lobby.tick(); } catch (error) { log?.(`lobby tick failed: ${error.stack || error}`); }
       next += TICK_MS;
       steps++;
     }
@@ -312,4 +339,7 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) 
   for (const signal of ['SIGTERM', 'SIGINT']) {
     process.on(signal, () => { running.close().then(() => process.exit(0)); });
   }
+  // A stray error somewhere is logged, not fatal: matches in progress carry on.
+  process.on('uncaughtException', (error) => console.error('uncaught:', error));
+  process.on('unhandledRejection', (error) => console.error('unhandled rejection:', error));
 }

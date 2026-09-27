@@ -37,6 +37,7 @@ import { BTN_ADS } from '../shared/movement.js';
 export const STAGES = ['input', 'movement', 'build', 'fire', 'damage', 'storm', 'replication'];
 
 const MAX_INPUTS_PER_TICK = 2;
+const INPUT_BURST = 6;
 const MAX_QUEUE = 8;
 const STALL_TICKS = 6;        // no input for this long and gravity takes over
 
@@ -126,11 +127,15 @@ export class Match {
     for (const p of this.players.values()) {
       p.consumed = null;
       if (p.bot) continue;
+      // A token bucket: one input's worth of credit per tick, banked up to a
+      // small burst. A client that hitched catches up two inputs a tick until
+      // the bank is spent, but no client — however many it sends — ever gets
+      // more than 30 ticks of movement a second.
+      p.inputBudget = Math.min(INPUT_BURST, (p.inputBudget ?? INPUT_BURST) + 1);
       if (!p.inputs.length) continue;
-      // Normally one input per tick. A client that fell behind (a hitch, a
-      // burst after packet loss) catches up two at a time, never faster, so a
-      // doctored client cannot move quicker by sending more.
-      const take = p.inputs.length > 2 ? MAX_INPUTS_PER_TICK : 1;
+      const take = Math.min(p.inputs.length > 2 ? MAX_INPUTS_PER_TICK : 1, Math.floor(p.inputBudget));
+      if (take <= 0) continue;
+      p.inputBudget -= take;
       p.consumed = p.inputs.splice(0, take);
       for (const input of p.consumed) this.applyActions(p, input);
     }

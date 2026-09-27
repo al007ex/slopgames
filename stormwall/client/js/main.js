@@ -120,7 +120,7 @@ class App {
     this.net.on('json', (msg) => this.onJson(msg));
     this.net.on('snapshot', (data) => this.onSnapshot(data));
     this.net.on('close', () => this.onDisconnect());
-    this.net.on('open', () => this.hello());
+    this.net.on('open', () => { this.retries = 0; this.hello(); });
     this.net.connect();
 
     $('name').value = localStorage.getItem('sw.name') || '';
@@ -136,6 +136,7 @@ class App {
 
     $('loading').hidden = true;
     $('menu').hidden = false;
+    this.loadRegions();
     requestAnimationFrame((t) => this.frame(t));
     // Some embedded views stop animation frames while not being painted; keep
     // the simulation ticking anyway. Hidden tabs throttle this to 1 Hz, so it
@@ -260,13 +261,7 @@ class App {
         break;
       case 'profile': this.lobby.onProfile(msg); if (!$('name').value) $('name').value = msg.name; break;
       case 'leaderboard': this.lobby.onLeaderboard(msg); break;
-      case 'shop': {
-        const n = $('lobby-note');
-        n.textContent = msg.error; n.hidden = false;
-        clearTimeout(this.lobbyNoteTimer);
-        this.lobbyNoteTimer = setTimeout(() => { n.hidden = true; }, 2500);
-        break;
-      }
+      case 'shop': this.lobbyNote(msg.error); break;
       case 'match':
         if (this.game.freshWorld(msg.id)) { this.fillRenderers(); this.loot.clear(); this.storm.clear(); }
         this.flow.reset();
@@ -308,7 +303,8 @@ class App {
       case 'knocked': this.toast("YOU'RE DOWN — crawl to your team", 2500); $('vignette').classList.add('show'); break;
       case 'revived': this.toast('BACK ON YOUR FEET', 1500); this.team.revive = null; break;
       case 'queue': this.showQueue(true, `Waiting for a free server slot — ${msg.position} in line`); break;
-      case 'lobby': this.toLobby(); break;
+      case 'lobby': this.toLobby(); if (msg.reason && !/over|left|cancel/.test(msg.reason)) this.lobbyNote?.(msg.reason); break;
+      case 'resumed': this.toast('BACK IN THE MATCH', 1500); break;
       case 'note': this.hudNote(msg.text); break;
       case 'feed': this.addFeed(msg); this.flow.onFeed(msg); break;
       case 'weak': this.weak.show(msg.x === undefined ? null : msg); break;
@@ -342,10 +338,16 @@ class App {
     }
   }
 
+  /**
+   * Lost the connection: keep the match on screen and try again, backing off.
+   * The server puts us straight back into our match when we reconnect.
+   */
   onDisconnect() {
-    this.toLobby();
-    $('loading-text').textContent = 'Connection lost — reconnecting…';
-    setTimeout(() => this.net.connect(), 1500);
+    this.retries = (this.retries || 0) + 1;
+    const wait = Math.min(8000, 800 * this.retries);
+    if (this.state === 'match') this.toast('CONNECTION LOST — RECONNECTING…', wait + 2000);
+    clearTimeout(this.reconnectTimer);
+    this.reconnectTimer = setTimeout(() => this.net.connect(), wait);
   }
 
   updateLockPrompt() {
@@ -463,6 +465,33 @@ class App {
   }
 
   queueAction(a) { this.actions.push(a); }
+
+  lobbyNote(text, ms = 3000) {
+    const n = $('lobby-note');
+    n.textContent = text; n.hidden = false;
+    clearTimeout(this.lobbyNoteTimer);
+    this.lobbyNoteTimer = setTimeout(() => { n.hidden = true; }, ms);
+  }
+
+  /**
+   * Which server to play on. Each region is its own server; this page is
+   * served by one of them. With several configured, the lobby lists them with
+   * their ping and switching region loads that one's page.
+   */
+  async loadRegions() {
+    let regions = [];
+    try { regions = (await (await fetch('./regions')).json()).regions || []; } catch { return; }
+    const here = regions.find((r) => !r.url) || regions[0];
+    const el = $('region');
+    const show = () => {
+      const ms = Math.round(this.net.rtt);
+      if (regions.length < 2) { el.textContent = `Server: ${here?.name || 'Main'}${ms ? ` · ${ms} ms` : ''}`; return; }
+      el.innerHTML = `<select id="region-pick">${regions.map((r) => `<option value="${esc(r.url)}" ${r === here ? 'selected' : ''}>${esc(r.name)}${r === here && ms ? ` · ${ms} ms` : ''}</option>`).join('')}</select>`;
+      $('region-pick').onchange = (e) => { if (e.target.value) window.location.href = e.target.value; };
+    };
+    show();
+    setInterval(show, 5000);
+  }
   yawQ() { return quantizeYaw(this.yaw); }
   pitchQ() { return quantizePitch(this.pitch); }
 

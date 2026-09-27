@@ -37,6 +37,26 @@ export class Lobby {
     conn.sendJson({ t: 'queue', mode, position: this.waiting.length });
   }
 
+  /**
+   * A player who dropped out of a running match (closed the tab, lost signal)
+   * comes back to the same character when they reconnect with their account.
+   */
+  resume(conn) {
+    if (!conn.account) return false;
+    for (const m of this.matches) {
+      if (m.mode === 'sandbox' || m.finished) continue;
+      for (const p of m.players.values()) {
+        if (p.account !== conn.account || p.resultsSent) continue;
+        if (p.conn && p.conn !== conn) p.conn.detach();
+        conn.attach(m, p);
+        conn.sendJson({ t: 'resumed' });
+        if (!p.alive && p.eliminatedBy) conn.spectating = p.eliminatedBy;
+        return true;
+      }
+    }
+    return false;
+  }
+
   cancel(conn) {
     const at = this.waiting.indexOf(conn);
     if (at >= 0) this.waiting.splice(at, 1);
