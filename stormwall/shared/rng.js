@@ -92,3 +92,15 @@ export const smoothstep = (e0, e1, x) => {
   const t = x <= e0 ? 0 : x >= e1 ? 1 : (x - e0) / (e1 - e0);
   return t * t * (3 - 2 * t);
 };
+
+// Sine and cosine from + − × ÷ only, for placement decisions in world
+// generation (Math.sin is not bit-identical across engines). Accurate to ~1e-7.
+const PI = 3.141592653589793;
+export function dsin(x) {
+  x -= 2 * PI * Math.floor((x + PI) / (2 * PI));      // → [−π, π)
+  if (x > PI / 2) x = PI - x;
+  else if (x < -PI / 2) x = -PI - x;                  // → [−π/2, π/2]
+  const x2 = x * x;
+  return x * (1 - x2 / 6 * (1 - x2 / 20 * (1 - x2 / 42 * (1 - x2 / 72 * (1 - x2 / 110 * (1 - x2 / 156))))));
+}
+export const dcos = (x) => dsin(x + PI / 2);

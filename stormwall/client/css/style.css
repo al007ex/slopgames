@@ -68,3 +68,17 @@ button { font: inherit; cursor: pointer; }
 .vignette.show { opacity: 1; transition: none; }
 .vignette.dead { opacity: 1; background: radial-gradient(ellipse at center, rgba(40, 0, 0, 0.35) 20%, rgba(90, 0, 0, 0.75) 100%); }
 .crosshair.ads { --spread: 2px; }
+.loadout { position: absolute; right: 18px; bottom: 18px; display: grid; gap: 8px; justify-items: end; }
+.mats { display: flex; gap: 6px; }
+.mat { display: flex; align-items: center; gap: 6px; background: rgba(0, 0, 0, 0.5); border: 1px solid rgba(255, 255, 255, 0.15); border-radius: 6px; padding: 4px 9px; font-size: 15px; min-width: 64px; }
+.mat i { width: 16px; height: 16px; border-radius: 3px; display: inline-block; }
+.mat.wood i { background: linear-gradient(135deg, #c88a4a, #8a5a2a); }
+.mat.stone i { background: linear-gradient(135deg, #c07a64, #8a5242); }
+.mat.metal i { background: linear-gradient(135deg, #b4c4d0, #6a7a88); }
+.mat.selected { border-color: var(--gold); box-shadow: 0 0 0 1px var(--gold); }
+.hotbar { display: flex; gap: 6px; }
+.slot { position: relative; width: 62px; height: 62px; border-radius: 8px; background: rgba(0, 0, 0, 0.45); border: 2px solid rgba(255, 255, 255, 0.14); display: grid; place-items: center; }
+.slot.active { border-color: #fff; transform: translateY(-4px); }
+.slot em { position: absolute; left: 5px; top: 2px; font-size: 11px; font-style: normal; opacity: 0.75; }
+.slot b { position: absolute; right: 5px; bottom: 2px; font-size: 12px; }
+.icon.pick { width: 34px; height: 34px; background: linear-gradient(45deg, transparent 44%, #8a6040 44%, #8a6040 56%, transparent 56%), linear-gradient(-45deg, transparent 30%, #c4ccd4 30%, #c4ccd4 42%, transparent 42%); background-size: 100% 100%; }

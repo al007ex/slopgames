@@ -16,6 +16,7 @@ export class ClientGame {
   constructor(base) {
     this.base = base;
     this.world = new World(base);
+    this.worldMatch = null;
     this.reset();
     this.blockReaders = {};
     this.blockHandlers = {};
@@ -36,6 +37,44 @@ export class ClientGame {
 
   /** Registers a decoder and a handler for one kind of snapshot block. */
   onBlock(tag, read, handle) { this.blockReaders[tag] = read; this.blockHandlers[tag] = handle; }
+
+  /** A fresh copy of the island for a new match; returns true if it was replaced. */
+  freshWorld(matchId) {
+    if (this.worldMatch === matchId) return false;
+    if (this.worldMatch !== null) this.world = new World(this.base);
+    this.worldMatch = matchId;
+    return true;
+  }
+
+  /** Applies replicated piece records; `hooks` updates whatever draws them. */
+  applyPieces(list, hooks) {
+    const world = this.world;
+    for (const rec of list) {
+      const existing = world.pieces.get(rec.id);
+      if (!rec.alive) {
+        if (existing) { world.removePiece(existing); hooks.removed(existing); }
+        continue;
+      }
+      if (existing) {
+        if (existing.edit !== rec.edit || existing.rot !== rec.rot) world.reshapePiece(existing, { edit: rec.edit, rot: rec.rot });
+        existing.damage = rec.damage; existing.start = rec.start; existing.team = rec.team;
+        hooks.changed(existing);
+      } else {
+        const p = world.addPiece({ ...rec });
+        hooks.added(p);
+      }
+    }
+  }
+
+  applyProps(list, hooks) {
+    for (const rec of list) {
+      const p = this.world.props[rec.id];
+      if (!p) continue;
+      if (!rec.alive) { if (p.alive) { this.world.removeProp(p); hooks.removed(p); } continue; }
+      p.hp = rec.hp;
+      hooks.changed(p);
+    }
+  }
 
   start(msg) {
     this.reset();

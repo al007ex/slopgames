@@ -16,6 +16,10 @@ import {
   Writer, S_SNAPSHOT, B_END, writeSelf, writePlayer,
 } from '../shared/protocol.js';
 import { createPlayer, recordHistory } from './player.js';
+import { Rng } from '../shared/rng.js';
+import { replicationMethods } from './replication.js';
+import { structureMethods } from './structures.js';
+import { harvestMethods } from './harvest.js';
 
 export const STAGES = ['input', 'movement', 'build', 'fire', 'damage', 'storm', 'replication'];
 
@@ -42,6 +46,8 @@ export class Match {
     this.repBuckets = Array.from({ length: REP_N * REP_N }, () => []);
     this.damageQueue = [];
     this.spawnPoints = [];
+    this.rng = new Rng(rngSeed);
+    this.initReplication();
   }
 
   addPlayer(opts) {
@@ -151,7 +157,10 @@ export class Match {
   /* ------------------------------------------------- 3‥6. later systems */
 
   stageBuild() { this.mark('build'); }
-  stageFire() { this.mark('fire'); }
+  stageFire() {
+    this.mark('fire');
+    for (const p of this.players.values()) this.swingPickaxe(p);
+  }
   /* -------------------------------------------------------- 5. damage */
 
   /** Queues damage; it is all applied, in order, in the damage stage. */
@@ -163,7 +172,10 @@ export class Match {
     this.mark('damage');
     const queue = this.damageQueue;
     this.damageQueue = [];
-    for (const d of queue) this.applyDamage(d);
+    for (const d of queue) {
+      if (d.structure) this.applyStructureDamage(d);
+      else this.applyDamage(d);
+    }
   }
 
   applyDamage(d) {
@@ -223,7 +235,13 @@ export class Match {
       if (!conn.ready || conn.backlogged?.()) continue;
       conn.send(this.snapshotFor(conn));
     }
+    this.events.length = 0;
+    for (const p of this.players.values()) {
+      if (p.invDirty) { p.invDirty = false; p.conn?.sendJson(this.inventoryMessage(p)); }
+    }
   }
+
+  inventoryMessage(p) { return { t: 'inv', mats: p.mats }; }
 
   /** The point a connection sees the world from: its player, or who it spectates. */
   focusOf(conn) {
@@ -266,8 +284,6 @@ export class Match {
     return w.finish();
   }
 
-  writeBlocks(w, conn, focus) { void w; void conn; void focus; }
-
   tickStats() {
     const s = this.stats;
     const recent = [...s.recent].sort((a, b) => a - b);
@@ -279,6 +295,8 @@ export class Match {
     };
   }
 }
+
+Object.assign(Match.prototype, replicationMethods, structureMethods, harvestMethods);
 
 export function repCellOf(x, z) {
   const i = Math.floor(x / REP_CELL), j = Math.floor(z / REP_CELL);
