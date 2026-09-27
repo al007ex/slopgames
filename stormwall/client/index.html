@@ -71,20 +71,51 @@
 </section>
 
 <section id="menu" class="screen" hidden>
-  <div class="card lobby">
-    <h1 class="logo">STORM<span>WALL</span></h1>
-    <p class="tag">Drop in. Build up. Outlast the storm.</p>
-    <input id="name" type="text" maxlength="16" placeholder="Your name" autocomplete="off" spellcheck="false" />
-    <div id="modes" class="modes" role="tablist">
-      <button type="button" data-mode="solo" class="on">Solo</button>
-      <button type="button" data-mode="duos">Duos</button>
-      <button type="button" data-mode="squads">Squads</button>
-      <button type="button" data-mode="practice">Practice</button>
+  <div class="lobby-shell">
+    <header class="lobby-top">
+      <h1 class="logo small">STORM<span>WALL</span></h1>
+      <div class="level" title="Your level"><span class="lv">LV <b id="lv-num">1</b></span><div class="xpbar"><i id="xp-fill"></i></div><small id="xp-text">0 XP</small></div>
+      <div class="coins" title="Coins — earned by playing"><span>◈</span><b id="coins">0</b></div>
+    </header>
+    <p id="lobby-note" class="lobby-note" hidden></p>
+    <nav id="lobby-tabs" class="lobby-tabs">
+      <button type="button" data-tab="play" class="on">Play</button>
+      <button type="button" data-tab="locker">Locker</button>
+      <button type="button" data-tab="challenges">Challenges</button>
+      <button type="button" data-tab="career">Career</button>
+    </nav>
+    <div class="panel" id="panel-play">
+      <p class="tag">Drop in. Build up. Outlast the storm.</p>
+      <input id="name" type="text" maxlength="16" placeholder="Your name" autocomplete="off" spellcheck="false" />
+      <div id="modes" class="modes" role="tablist">
+        <button type="button" data-mode="solo" class="on">Solo</button>
+        <button type="button" data-mode="duos">Duos</button>
+        <button type="button" data-mode="squads">Squads</button>
+        <button type="button" data-mode="practice">Practice</button>
+      </div>
+      <p id="mode-hint" class="hint mode-hint"></p>
+      <button id="play" class="play" type="button">Play</button>
+      <div id="queue-status" class="queue-status" hidden><i class="spinner"></i><span>Finding a match…</span><button id="cancel" class="ghost" type="button">Cancel</button></div>
+      <p class="hint">WASD move · Shift sprint · Space jump · C crouch · mouse aim · Q/F/Z/X build · G edit · E use · T ping · M map · Tab scores</p>
     </div>
-    <p id="mode-hint" class="hint mode-hint">100 players. Matches fill with bots when there are not enough people.</p>
-    <button id="play" class="play" type="button">Play</button>
-    <div id="queue-status" class="queue-status" hidden><i class="spinner"></i><span>Finding a match…</span><button id="cancel" class="ghost" type="button">Cancel</button></div>
-    <p class="hint">WASD move · Shift sprint · Space jump · C crouch · mouse aim · Q/F/Z/X build · G edit · E use · M map</p>
+    <div class="panel locker" id="panel-locker" hidden>
+      <canvas id="locker-preview" class="preview"></canvas>
+      <div>
+        <div id="locker-kinds" class="seg"><button type="button" data-kind="outfit" class="on">Outfits</button><button type="button" data-kind="glider">Gliders</button><button type="button" data-kind="pickaxe">Pickaxes</button></div>
+        <div id="locker-items" class="items"></div>
+        <p class="hint">Cosmetics only change how you look. Coins (◈) are earned by playing — there is nothing to buy with real money.</p>
+      </div>
+    </div>
+    <div class="panel" id="panel-challenges" hidden>
+      <h3>Today's challenges</h3>
+      <p id="challenge-reset" class="hint"></p>
+      <div id="challenge-list"></div>
+    </div>
+    <div class="panel" id="panel-career" hidden>
+      <dl id="career-stats" class="career"></dl>
+      <div id="board-kinds" class="seg"><button type="button" data-board="wins" class="on">Wins</button><button type="button" data-board="kills">Eliminations</button><button type="button" data-board="level">Level</button></div>
+      <div id="board" class="board"></div>
+    </div>
   </div>
 </section>
 
@@ -98,6 +129,7 @@
       <div><dt>Survived</dt><dd id="res-time">0:00</dd></div>
     </dl>
     <p class="res-xp" id="res-xp"></p>
+    <p class="res-extra" id="res-extra"></p>
     <button id="res-lobby" class="play" type="button">Back to lobby</button>
     <button id="res-spectate" class="ghost" type="button">Spectate</button>
   </div>

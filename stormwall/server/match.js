@@ -8,7 +8,7 @@
 
 import { World } from '../shared/world.js';
 import { getWorld, MAP_SEED } from '../shared/worldgen.js';
-import { stepMovement, MODE_BUS, MODE_DEAD, MODE_WALK } from '../shared/movement.js';
+import { stepMovement, MODE_BUS, MODE_DEAD, MODE_WALK, MODE_SKYDIVE, MODE_GLIDE } from '../shared/movement.js';
 import {
   TICK_HZ, REP_CELL, REP_N, NEAR_RADIUS, FAR_RADIUS, FAR_EVERY,
 } from '../shared/constants.js';
@@ -28,7 +28,10 @@ import { flowMethods, TEAM_SIZES } from './flow.js';
 import { botMethods } from './bots.js';
 import { teamMethods } from './teams.js';
 import { A_SLOT, A_BUILD, A_MAT, A_PLACE, A_EDIT, A_RELOAD, A_INTERACT, A_DROP, A_JUMP, A_PING, PF_ADS, PF_BUILD, PF_FIRING, PF_USING, PF_HARVEST } from '../shared/protocol.js';
-import { itemId } from '../shared/items.js';
+import { itemId, WEAPONS } from '../shared/items.js';
+import { poiAt } from '../shared/worldgen.js';
+
+const WEAPON_CLASS = Object.fromEntries(Object.entries(WEAPONS).map(([k, w]) => [k, ['ar', 'burst', 'scoped'].includes(w.cls) ? 'rifle' : ['pump', 'tactical'].includes(w.cls) ? 'shotgun' : w.cls]));
 import { BTN_ADS } from '../shared/movement.js';
 
 export const STAGES = ['input', 'movement', 'build', 'fire', 'damage', 'storm', 'replication'];
@@ -195,8 +198,13 @@ export class Match {
       p.yaw = input.yaw; p.pitch = input.pitch; p.buttons = input.buttons;
       p.mx = input.mx; p.mz = input.mz; p.viewTick = input.viewTick;
     }
+    const wasAir = p.move.mode === MODE_SKYDIVE || p.move.mode === MODE_GLIDE;
     const fall = stepMovement(p.move, input, this.world);
     if (fall > 0) this.onFallDamage(p, fall);
+    if (wasAir && p.move.mode === MODE_WALK && !p.landedAt) {
+      p.landedAt = this.tick;
+      p.landedPoi = poiAt(this.base, p.move.x, p.move.z);
+    }
   }
 
   onFallDamage(p, amount) { this.damage(p, amount, { kind: 'fall' }); }
@@ -257,6 +265,8 @@ export class Match {
     const src = d.source;
     if (src && src !== p) {
       src.damageDealt = (src.damageDealt || 0) + effective;
+      const cls = d.weapon && WEAPON_CLASS[d.weapon];
+      if (cls) src.damageByClass = { ...src.damageByClass, [cls]: ((src.damageByClass || {})[cls] || 0) + effective };
       src.conn?.sendJson({ t: 'hit', dmg: Math.round(d.amount), head: !!d.head, shield: shieldBefore > 0, x: d.point?.x, y: d.point?.y, z: d.point?.z, kill: p.hp <= 0 });
     }
     if (p.hp <= 0) {

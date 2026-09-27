@@ -31,6 +31,7 @@ import { StormView } from './storm.js';
 import { MapView } from './map.js';
 import { MatchFlow } from './flow.js';
 import { TeamView } from './team.js';
+import { LobbyView } from './lobby.js';
 import { MODE_BUS, MODE_DEAD } from '#shared/movement.js';
 import { WEAPONS, itemKey, itemId } from '#shared/items.js';
 import { EV_SHOT, EV_EXPLOSION, EV_RELOAD } from '#shared/events.js';
@@ -101,6 +102,8 @@ class App {
     this.map = new MapView(this, this.terrain.colors, this.base.terrain, this.base.pois, this.base.roads);
     this.flow = new MatchFlow(this);
     this.team = new TeamView(this);
+    this.lobby = new LobbyView(this);
+    this.pickaxeMesh = pickaxeMesh;
     this.teammateMarks = () => this.team.marks();
     this.mode = localStorage.getItem('sw.mode') || 'solo';
     window.addEventListener('pointerdown', () => this.audio.unlock());
@@ -117,6 +120,7 @@ class App {
     this.net.on('json', (msg) => this.onJson(msg));
     this.net.on('snapshot', (data) => this.onSnapshot(data));
     this.net.on('close', () => this.onDisconnect());
+    this.net.on('open', () => this.hello());
     this.net.connect();
 
     $('name').value = localStorage.getItem('sw.name') || '';
@@ -210,11 +214,18 @@ class App {
     }[mode];
   }
 
+  /** Introduces this browser: its saved account if it has one, a new one otherwise. */
+  hello() {
+    let saved = {};
+    try { saved = JSON.parse(localStorage.getItem('sw.account') || '{}'); } catch { saved = {}; }
+    this.net.sendJson({ t: 'hello', name: ($('name').value || localStorage.getItem('sw.name') || 'Player').trim().slice(0, 16), id: saved.id || '', token: saved.token || '' });
+  }
+
   play() {
     const name = $('name').value.trim().slice(0, 16) || 'Player';
     localStorage.setItem('sw.name', name);
     this.audio.unlock();
-    this.net.sendJson({ t: 'hello', name });
+    this.hello();
     if (this.mode === 'practice') this.net.sendJson({ t: 'practice' });
     else { this.net.sendJson({ t: 'queue', mode: this.mode }); this.showQueue(true); }
     this.input.lock();
@@ -243,7 +254,19 @@ class App {
     switch (msg.t) {
       case 'welcome':
         if (msg.hash !== this.base.hash) console.error(`World mismatch: server ${msg.hash}, client ${this.base.hash}`);
+        if (msg.account?.token) {
+          try { localStorage.setItem('sw.account', JSON.stringify({ id: msg.account.id, token: msg.account.token })); } catch { /* private window: a new account each visit */ }
+        }
         break;
+      case 'profile': this.lobby.onProfile(msg); if (!$('name').value) $('name').value = msg.name; break;
+      case 'leaderboard': this.lobby.onLeaderboard(msg); break;
+      case 'shop': {
+        const n = $('lobby-note');
+        n.textContent = msg.error; n.hidden = false;
+        clearTimeout(this.lobbyNoteTimer);
+        this.lobbyNoteTimer = setTimeout(() => { n.hidden = true; }, 2500);
+        break;
+      }
       case 'match':
         if (this.game.freshWorld(msg.id)) { this.fillRenderers(); this.loot.clear(); this.storm.clear(); }
         this.flow.reset();
@@ -277,7 +300,7 @@ class App {
       case 'storm': this.storm.set(msg); break;
       case 'phase': this.flow.onPhase(msg); break;
       case 'alive': this.flow.onAlive(msg); break;
-      case 'results': this.flow.onResults(msg); break;
+      case 'results': this.flow.onResults(msg); $('res-extra').innerHTML = this.lobby.resultsExtras(msg); break;
       case 'roster': for (const p of msg.players) this.game.roster.set(p.id, p); break;
       case 'team': this.team.onTeam(msg); break;
       case 'ping': this.team.onPing(msg); break;

@@ -63,6 +63,7 @@ export class Lobby {
   join(conn, match) {
     conn.queued = null;
     const p = match.addPlayer({ name: conn.name, team: match.nextTeam(), outfit: conn.outfit ?? 0, glider: conn.glider ?? 0, pickaxe: conn.pickaxe ?? 0, account: conn.account || null });
+    p.account = conn.account || null;
     match.joinPregame(p);
     conn.attach(match, p);
     for (const other of match.conns) if (other !== conn) other.sendJson({ t: 'joined', player: match.rosterEntry(p) });

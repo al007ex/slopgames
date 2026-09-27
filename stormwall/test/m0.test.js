@@ -117,7 +117,7 @@ section('Interest management');
 
 section('100 connected clients at a stable tick');
 {
-  const server = await startServer({ port: 0, log: null, maxPerIp: 200 });
+  const server = await startServer({ port: 0, log: null, maxPerIp: 200, dataDir: null });
   const url = `ws://127.0.0.1:${server.port}/ws`;
   const clients = [];
   for (let i = 0; i < 100; i++) {

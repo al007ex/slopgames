@@ -66,7 +66,7 @@ export class MatchFlow {
     $('res-kills').textContent = msg.kills;
     $('res-damage').textContent = msg.damage;
     $('res-time').textContent = `${Math.floor(msg.survived / 60)}:${String(msg.survived % 60).padStart(2, '0')}`;
-    $('res-xp').textContent = msg.xp ? `+${msg.xp} XP` : '';
+    $('res-xp').textContent = '';
     $('res-spectate').hidden = !!msg.victory || this.phase === 'ended';
     this.app.input.unlock();
     if (msg.victory) this.app.audio.victory?.();

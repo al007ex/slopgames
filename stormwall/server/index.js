@@ -9,6 +9,7 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 import { WebSocketServer, WebSocket } from 'ws';
 import { Match } from './match.js';
 import { Lobby } from './lobby.js';
+import { AccountStore } from './accounts.js';
 import { TICK_MS, TICK_HZ } from '../shared/constants.js';
 import { C_INPUT, C_PING, decodeClient, encodePong, Writer } from '../shared/protocol.js';
 import { getWorld } from '../shared/worldgen.js';
@@ -55,13 +56,18 @@ function addressOf(req) {
   return forwarded || remote || 'unknown';
 }
 
-export async function startServer({ port = 3500, host, log = console.log, seed, maxPerIp = MAX_PER_IP, pregameSeconds, maxMatches } = {}) {
+export async function startServer({ port = 3500, host, log = console.log, seed, maxPerIp = MAX_PER_IP, pregameSeconds, maxMatches, dataDir = path.join(root, 'data') } = {}) {
   const base = getWorld(seed);
   const conns = new Set();
   let sandbox = null;
   let nextConnId = 1;
   const pong = new Writer(16);
-  const lobby = new Lobby({ base, log, pregameSeconds, maxMatches });
+  const accounts = new AccountStore(dataDir ? path.join(dataDir, 'accounts.json') : null, { log });
+  const lobby = new Lobby({
+    base, log, pregameSeconds, maxMatches,
+    // Humans' results go on their account: XP, coins, challenges, stats.
+    onMatchCreated(match) { match.onPlayerResults = accounts.resultsHook(); },
+  });
   const matches = lobby.matches;
 
   const game = {
@@ -165,9 +171,30 @@ export async function startServer({ port = 3500, host, log = console.log, seed, 
 
   function handleJson(conn, msg) {
     switch (msg.t) {
-      case 'hello':
-        conn.name = String(msg.name || 'Player').replace(/[^\p{L}\p{N} _.-]/gu, '').trim().slice(0, 16) || 'Player';
-        conn.sendJson({ t: 'welcome', conn: conn.id, hash: base.hash, seed: base.seed, tickHz: TICK_HZ });
+      case 'hello': {
+        const { account, token } = accounts.login(typeof msg.id === 'string' ? msg.id : '', typeof msg.token === 'string' ? msg.token : '', msg.name);
+        conn.account = account;
+        conn.name = account.name;
+        conn.outfit = account.equipped.outfit; conn.glider = account.equipped.glider; conn.pickaxe = account.equipped.pickaxe;
+        conn.sendJson({ t: 'welcome', conn: conn.id, hash: base.hash, seed: base.seed, tickHz: TICK_HZ, account: { id: account.id, token } });
+        conn.sendJson(accounts.profile(account));
+        return;
+      }
+      case 'profile':
+        if (conn.account) conn.sendJson(accounts.profile(conn.account));
+        return;
+      case 'buy':
+      case 'equip': {
+        if (!conn.account) return;
+        const problem = msg.t === 'buy' ? accounts.buy(conn.account, msg.kind, msg.id | 0) : accounts.equip(conn.account, msg.kind, msg.id | 0);
+        if (problem) conn.sendJson({ t: 'shop', error: problem });
+        const e = conn.account.equipped;
+        conn.outfit = e.outfit; conn.glider = e.glider; conn.pickaxe = e.pickaxe;
+        conn.sendJson(accounts.profile(conn.account));
+        return;
+      }
+      case 'leaderboard':
+        conn.sendJson(accounts.leaderboard());
         return;
       case 'queue':
         if (conn.match) return;
@@ -260,9 +287,10 @@ export async function startServer({ port = 3500, host, log = console.log, seed, 
       const actual = http.address().port;
       log?.(`Stormwall listening on http://localhost:${actual}`);
       resolve({
-        port: actual, game, conns, matches, lobby,
+        port: actual, game, conns, matches, lobby, accounts,
         close: () => new Promise((done) => {
           running = false;
+          accounts.saveNow();
           clearTimeout(timer);
           clearInterval(heartbeat);
           for (const conn of conns) conn.ws.terminate();

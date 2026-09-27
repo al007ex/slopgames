@@ -204,23 +204,43 @@ export const flowMethods = {
     this.broadcastPhase();
   },
 
-  /** Results for one player: where they placed and what they did. */
+  /** Results for one player: where they placed, what they did, and the stats challenges count. */
   resultsFor(p) {
+    const end = p.alive ? this.tick : p.diedAt || this.tick;
+    let outlasted = 0;
+    for (const q of this.players.values()) if (q !== p && q.team !== p.team && !q.alive && (q.diedAt || 0) < end) outlasted++;
+    const teams = this.teamsAliveAtStart || this.aliveTeams().size;
+    const cls = p.damageByClass || {};
     return {
-      t: 'results', placement: p.placement, of: this.teamsAliveAtStart || this.aliveTeams().size, victory: p.placement === 1,
+      t: 'results', placement: p.placement, of: teams, teams, victory: p.placement === 1,
       kills: p.kills, damage: Math.round(p.damageDealt || 0), team: p.team, mode: this.mode,
-      survived: Math.round(((p.diedAt || this.tick) - (this.route?.start || this.tick)) / TICK_HZ),
+      survived: Math.max(0, Math.round((end - (this.route?.start || end)) / TICK_HZ)),
       killer: p.eliminatedBy ? this.players.get(p.eliminatedBy)?.name || '' : '',
+      stats: {
+        kills: p.kills, chests: p.chests || 0, harvested: p.harvested || 0, built: p.built || 0, damage: Math.round(p.damageDealt || 0),
+        damageRifle: Math.round(cls.rifle || 0), damageShotgun: Math.round(cls.shotgun || 0),
+        top25: p.placement <= 25 ? 1 : 0, outlasted, landedNamed: p.landedPoi ? 1 : 0,
+        revives: p.revives || 0, healed: p.healed || 0, weakHits: p.weakHits || 0, edits: p.edits || 0,
+      },
     };
   },
 
+  /** Sends (and records) a player's results, once. */
+  deliverResults(p) {
+    if (p.resultsSent) return;
+    p.resultsSent = true;
+    const res = this.resultsFor(p);
+    this.onPlayerResults?.(p, res);
+    p.conn?.sendJson(res);
+  },
+
   onTeamOut(team) {
-    for (const q of this.players.values()) if (q.team === team && q.conn) q.conn.sendJson(this.resultsFor(q));
+    for (const q of this.players.values()) if (q.team === team) this.deliverResults(q);
     this.aliveDirty = true;
   },
 
   onMatchEnd() {
-    for (const q of this.players.values()) if (q.placement === 1 && q.conn) q.conn.sendJson(this.resultsFor(q));
+    for (const q of this.players.values()) if (q.placement === 1) this.deliverResults(q);
   },
 
   phaseMessage() {
