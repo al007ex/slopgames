@@ -10,7 +10,7 @@ import { WebSocketServer, WebSocket } from 'ws';
 import { Match } from './match.js';
 import { TICK_MS, TICK_HZ } from '../shared/constants.js';
 import { C_INPUT, C_PING, decodeClient, encodePong, Writer } from '../shared/protocol.js';
-import { getWorld } from '../shared/worldgen.js';
+import { getWorld, MESAS } from '../shared/worldgen.js';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const root = path.resolve(here, '..');
@@ -68,6 +68,12 @@ export async function startServer({ port = 3500, host, log = console.log, seed, 
     getSandbox() {
       if (!sandbox || !matches.has(sandbox)) {
         sandbox = new Match({ id: nextMatchId++, mode: 'sandbox', seed: base.seed, log });
+        // The sandbox starts at the foot of the first mesa: a gentle slope up
+        // one side, a lethal drop off the others.
+        const mesa = MESAS[0];
+        for (let i = 0; i < 24; i++) {
+          sandbox.spawnPoints.push({ x: mesa.x - mesa.r - 150 + (i % 6) * 9, z: mesa.z - 25 + Math.floor(i / 6) * 14 });
+        }
         matches.add(sandbox);
       }
       return sandbox;
@@ -117,10 +123,8 @@ export async function startServer({ port = 3500, host, log = console.log, seed, 
     leaveMatch(conn);
     const match = game.getSandbox();
     const p = match.addPlayer({ name: conn.name, bot: false });
-    // Spread sandbox players around the middle of the island.
-    const a = (p.id * 2.399963) % (Math.PI * 2);
-    const r = 40 + ((p.id * 37) % 200);
-    match.placeOnGround(p, 2560 + Math.cos(a) * r - 300, 2560 + Math.sin(a) * r);
+    const spot = match.spawnPoints[p.id % match.spawnPoints.length];
+    match.placeOnGround(p, spot.x, spot.z);
     p.conn = conn;
     conn.player = p;
     conn.match = match;

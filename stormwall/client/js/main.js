@@ -82,10 +82,34 @@ class App {
         $('play').disabled = false;
         this.updateLockPrompt();
         break;
+      case 'hurt': this.flash(); break;
+      case 'died':
+        $('vignette').classList.add('dead');
+        this.toast(msg.cause === 'fall' ? 'YOU FELL TO YOUR DEATH' : 'ELIMINATED', 3000);
+        break;
+      case 'respawned':
+        $('vignette').classList.remove('dead');
+        this.toast('BACK ON YOUR FEET', 1500);
+        break;
       case 'joined': this.game.roster.set(msg.player.id, msg.player); break;
       case 'left': this.game.roster.delete(msg.id); break;
       default:
     }
+  }
+
+  flash() {
+    const v = $('vignette');
+    v.classList.add('show');
+    clearTimeout(this.flashTimer);
+    this.flashTimer = setTimeout(() => v.classList.remove('show'), 120);
+  }
+
+  toast(text, ms = 2000) {
+    const t = $('toast');
+    t.textContent = text;
+    t.classList.add('show');
+    clearTimeout(this.toastTimer);
+    this.toastTimer = setTimeout(() => t.classList.remove('show'), ms);
   }
 
   onSnapshot(data) {
@@ -157,6 +181,7 @@ class App {
     const renderMove = { ...me.move, x: pos.x, y: pos.y, z: pos.z };
     const ads = this.input.mouse.right && this.input.locked;
     this.cam.update(dt, renderMove, this.yaw, this.pitch, ads, game.world.grid);
+    $('crosshair').classList.toggle('ads', ads);
 
     this.drawPlayers(dt, pos);
     this.terrain.update(this.gfx.camera.position);

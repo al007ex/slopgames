@@ -30,7 +30,7 @@ export const CROUCH_SPEED = 2.4;
 export const ADS_SPEED = 3.2;
 export const CRAWL_SPEED = 1.4;
 export const GRAVITY = 20;
-export const JUMP_SPEED = 7.4;         // a ~1.37 m hop
+export const JUMP_SPEED = 7.75;        // a ~1.37 m hop at 30 Hz (gravity acts on the take-off tick too)
 export const TERMINAL_FALL = 60;
 export const STEP_HEIGHT = 0.55;
 const GROUND_ACCEL = 70;
@@ -135,15 +135,6 @@ function gather(s, height, world, reach) {
   return nearby;
 }
 
-/** Is there something to stand on just below the capsule? */
-function probeGround(s, height, world, cols) {
-  const probe = copyMoveState(s, probeState);
-  probe.y -= 0.06;
-  const ny = resolve(probe, height, world, cols, false);
-  return ny >= WALKABLE;
-}
-const probeState = {};
-
 function blockedByShore(world, x, z) {
   if (x < 1 || z < 1 || x > WORLD_SIZE - 1 || z > WORLD_SIZE - 1) return true;
   return world.terrain.heightAt(x, z) < DEEP_WATER;
@@ -162,6 +153,52 @@ function slide(s, dx, dy, dz, height, world, cols) {
     if (ny > groundNy) groundNy = ny;
   }
   return groundNy;
+}
+
+/** Deepest overlap of the capsule with terrain or shapes (no pushing). */
+function overlap(s, height, world, cols, out) {
+  const r = PLAYER_RADIUS;
+  world.terrain.sample(s.x, s.z, tsample);
+  let depth = r - (s.y + r - tsample.h) * tsample.ny;
+  out.ny = tsample.ny;
+  const ay = s.y + r, by = s.y + height - r;
+  for (let i = 0; i < cols.length; i++) {
+    const d = capsulePenetration(s.x, ay, s.z, s.x, by, s.z, r, cols[i], contact);
+    if (d > depth) { depth = d; out.ny = contact.ny; }
+  }
+  out.depth = depth;
+  return depth;
+}
+const lap = { depth: 0, ny: 0 };
+
+/**
+ * Lowers the capsule by up to `dist` until it first touches something, and
+ * leaves it resting there. Returns the up-component of the surface touched
+ * (0 if nothing was within reach, in which case the capsule is not moved).
+ */
+function sweepDown(s, dist, height, world, cols) {
+  const y0 = s.y;
+  const stepSize = 0.05;
+  for (let moved = 0; moved < dist;) {
+    const d = Math.min(stepSize, dist - moved);
+    s.y -= d;
+    moved += d;
+    if (overlap(s, height, world, cols, lap) > 0) {
+      let lo = s.y, hi = s.y + d;
+      for (let i = 0; i < 10; i++) {
+        const mid = (lo + hi) / 2;
+        s.y = mid;
+        if (overlap(s, height, world, cols, lap) > 0) lo = mid; else hi = mid;
+      }
+      s.y = lo;
+      overlap(s, height, world, cols, lap);
+      const ny = lap.ny;
+      s.y = hi;
+      return ny;
+    }
+  }
+  s.y = y0;
+  return 0;
 }
 
 const before = {};
@@ -222,6 +259,9 @@ export function stepMovement(s, input, world, dt = DT) {
   copyMoveState(s, before);
 
   let groundNy = slide(s, s.vx * dt, s.vy * dt, s.vz * dt, height, world, cols);
+  // Pushing into a wall's edge can clip a sliver of upward speed out of the
+  // contact normal; someone standing who did not jump stays standing.
+  if (wasGround && s.vy > 0) s.vy = 0;
 
   // Step up onto a low ledge (a floor laid on the ground, a kerb) when walking
   // into it would otherwise stop us.
@@ -231,11 +271,15 @@ export function stepMovement(s, input, world, dt = DT) {
     const gotX = s.x - before.x, gotZ = s.z - before.z;
     const got = Math.sqrt(gotX * gotX + gotZ * gotZ);
     if (want > 0.02 && got < want * 0.6) {
+      // Reach at least 15 cm forward: from a standstill against the ledge one
+      // tick's travel would leave the capsule balanced on the corner instead
+      // of over the top.
+      const reachF = Math.max(want, 0.15) / want;
       copyMoveState(before, stepped);
       slide(stepped, 0, STEP_HEIGHT, 0, height, world, cols);
       stepped.vx = before.vx; stepped.vz = before.vz; stepped.vy = 0;
-      slide(stepped, wantX, 0, wantZ, height, world, cols);
-      const ny = slide(stepped, 0, -STEP_HEIGHT - 0.05, 0, height, world, cols);
+      slide(stepped, wantX * reachF, 0, wantZ * reachF, height, world, cols);
+      const ny = sweepDown(stepped, STEP_HEIGHT + 0.05, height, world, cols);
       const sx = stepped.x - before.x, sz = stepped.z - before.z;
       if (ny >= WALKABLE && Math.sqrt(sx * sx + sz * sz) > got + 0.01 && stepped.y - before.y <= STEP_HEIGHT + 0.01) {
         copyMoveState(stepped, s);
@@ -245,12 +289,13 @@ export function stepMovement(s, input, world, dt = DT) {
     }
   }
 
-  let grounded = groundNy >= WALKABLE || probeGround(s, height, world, cols);
-  // Stay glued to the ground walking down a ramp or slope, instead of skipping
-  // off it in a string of tiny falls.
-  if (!grounded && wasGround && s.vy <= 0) {
+  let grounded = groundNy >= WALKABLE;
+  // Settle onto ground that is just below: exactly onto it when landing, and
+  // further when already walking, so going down a ramp or slope stays glued
+  // to it instead of skipping off in a string of tiny falls.
+  if (!grounded && s.vy <= 0) {
     copyMoveState(s, stepped);
-    const ny = slide(stepped, 0, -SNAP_DOWN, 0, height, world, cols);
+    const ny = sweepDown(stepped, wasGround ? SNAP_DOWN : 0.08, height, world, cols);
     if (ny >= WALKABLE) { copyMoveState(stepped, s); grounded = true; }
   }
 
@@ -313,7 +358,12 @@ function stepAir(s, input, world, dt) {
   const cols = gather(s, height, world, reach);
   const ny = slide(s, s.vx * dt, s.vy * dt, s.vz * dt, height, world, cols);
 
-  if (ny >= WALKABLE || probeGround(s, height, world, cols)) {
+  let landed = ny >= WALKABLE;
+  if (!landed && s.vy <= 0) {
+    copyMoveState(s, stepped);
+    if (sweepDown(stepped, 0.08, height, world, cols) >= WALKABLE) { copyMoveState(stepped, s); landed = true; }
+  }
+  if (landed) {
     s.mode = MODE_WALK; s.ground = 1; s.vy = 0; s.peakY = s.y;
     return 0;
   }

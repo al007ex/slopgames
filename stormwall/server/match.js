@@ -40,6 +40,8 @@ export class Match {
     this.writer = new Writer(64 * 1024);
     this.stats = { ticks: 0, totalMs: 0, maxMs: 0, recent: [] };
     this.repBuckets = Array.from({ length: REP_N * REP_N }, () => []);
+    this.damageQueue = [];
+    this.spawnPoints = [];
   }
 
   addPlayer(opts) {
@@ -94,6 +96,7 @@ export class Match {
 
   stageInput() {
     this.mark('input');
+    if (this.mode === 'sandbox') this.sandboxRespawns();
     for (const p of this.players.values()) {
       p.consumed = null;
       if (p.bot) continue;
@@ -143,13 +146,65 @@ export class Match {
     if (fall > 0) this.onFallDamage(p, fall);
   }
 
-  onFallDamage(p, amount) { void p; void amount; }
+  onFallDamage(p, amount) { this.damage(p, amount, { kind: 'fall' }); }
 
   /* ------------------------------------------------- 3‥6. later systems */
 
   stageBuild() { this.mark('build'); }
   stageFire() { this.mark('fire'); }
-  stageDamage() { this.mark('damage'); }
+  /* -------------------------------------------------------- 5. damage */
+
+  /** Queues damage; it is all applied, in order, in the damage stage. */
+  damage(target, amount, info = {}) {
+    if (amount > 0) this.damageQueue.push({ target, amount, ...info });
+  }
+
+  stageDamage() {
+    this.mark('damage');
+    const queue = this.damageQueue;
+    this.damageQueue = [];
+    for (const d of queue) this.applyDamage(d);
+  }
+
+  applyDamage(d) {
+    const p = d.target;
+    if (!p.alive) return 0;
+    let amount = d.amount;
+    // Shields soak damage first — except falling, which only ever hurts health.
+    if (d.kind !== 'fall' && p.shield > 0) {
+      const soaked = Math.min(p.shield, amount);
+      p.shield -= soaked;
+      amount -= soaked;
+    }
+    p.hp -= amount;
+    p.conn?.sendJson({ t: 'hurt', amount: d.amount, kind: d.kind, from: d.source?.id || 0 });
+    if (p.hp <= 0) this.eliminate(p, d);
+    return d.amount;
+  }
+
+  eliminate(p, d = {}) {
+    p.hp = 0;
+    p.alive = false;
+    p.move.mode = MODE_DEAD;
+    p.move.vx = p.move.vy = p.move.vz = 0;
+    p.diedAt = this.tick;
+    p.conn?.sendJson({ t: 'died', cause: d.kind || 'unknown', by: d.source?.id || 0 });
+    if (this.mode === 'sandbox') p.respawnAt = this.tick + 3 * TICK_HZ;
+  }
+
+  /** Sandbox only: the dead come back after three seconds at a spawn point. */
+  sandboxRespawns() {
+    for (const p of this.players.values()) {
+      if (p.alive || !p.respawnAt || this.tick < p.respawnAt) continue;
+      const spot = this.spawnPoints.length ? this.spawnPoints[p.id % this.spawnPoints.length] : { x: 2260, z: 2560 };
+      this.placeOnGround(p, spot.x, spot.z);
+      p.alive = true;
+      p.hp = 100;
+      p.shield = 0;
+      p.respawnAt = 0;
+      p.conn?.sendJson({ t: 'respawned' });
+    }
+  }
   stageStorm() { this.mark('storm'); }
 
   /* ---------------------------------------------------- 7. replication */

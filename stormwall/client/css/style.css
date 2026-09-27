@@ -64,3 +64,7 @@ button { font: inherit; cursor: pointer; }
 .debug { position: absolute; left: 10px; bottom: 10px; font: 11px/1.4 ui-monospace, monospace; color: rgba(255, 255, 255, 0.7); text-shadow: 0 1px 1px #000; white-space: pre; }
 .toast { position: absolute; left: 50%; top: 22%; transform: translateX(-50%); font-size: 26px; font-style: italic; text-shadow: 0 3px 8px rgba(0, 0, 0, 0.7); opacity: 0; transition: opacity 0.3s; text-align: center; }
 .toast.show { opacity: 1; }
+.vignette { position: fixed; inset: 0; pointer-events: none; z-index: 9; opacity: 0; background: radial-gradient(ellipse at center, transparent 45%, rgba(220, 20, 20, 0.55) 100%); transition: opacity 0.5s; }
+.vignette.show { opacity: 1; transition: none; }
+.vignette.dead { opacity: 1; background: radial-gradient(ellipse at center, rgba(40, 0, 0, 0.35) 20%, rgba(90, 0, 0, 0.75) 100%); }
+.crosshair.ads { --spread: 2px; }
