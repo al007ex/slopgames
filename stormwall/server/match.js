@@ -20,6 +20,8 @@ import { Rng } from '../shared/rng.js';
 import { replicationMethods } from './replication.js';
 import { structureMethods } from './structures.js';
 import { harvestMethods } from './harvest.js';
+import { buildingMethods } from './building.js';
+import { A_SLOT, A_BUILD, A_MAT, A_PLACE, A_EDIT } from '../shared/protocol.js';
 
 export const STAGES = ['input', 'movement', 'build', 'fire', 'damage', 'storm', 'replication'];
 
@@ -28,13 +30,13 @@ const MAX_QUEUE = 8;
 const STALL_TICKS = 6;        // no input for this long and gravity takes over
 
 export class Match {
-  constructor({ id = 1, mode = 'sandbox', seed = MAP_SEED, rngSeed = Date.now() >>> 0, log = null, trace = false } = {}) {
+  constructor({ id = 1, mode = 'sandbox', seed = MAP_SEED, rngSeed = Date.now() >>> 0, log = null, trace = false, base = null } = {}) {
     this.id = id;
     this.mode = mode;
     this.seed = seed;
     this.rngSeed = rngSeed;
     this.log = log;
-    this.base = getWorld(seed);
+    this.base = base || getWorld(seed);
     this.world = new World(this.base);
     this.tick = 0;
     this.players = new Map();
@@ -117,8 +119,26 @@ export class Match {
   }
 
   applyActions(p, input) {
-    // Filled in by later systems (slots, build selection, interaction…).
-    void p; void input;
+    for (const a of input.actions) this.onAction(p, a);
+  }
+
+  onAction(p, a) {
+    switch (a.type) {
+      case A_SLOT: this.selectSlot(p, a.slot); break;
+      case A_BUILD:
+        if (a.piece === 255) p.buildMode = false;
+        else if (a.piece <= 3) { p.buildMode = true; p.buildPiece = a.piece; }
+        break;
+      case A_MAT: if (a.mat <= 2) p.buildMat = a.mat; break;
+      case A_PLACE: if (p.pendingBuild.length < 4) p.pendingBuild.push(a); break;
+      case A_EDIT: if (p.pendingEdits.length < 4) p.pendingEdits.push(a); break;
+      default: this.onOtherAction?.(p, a);
+    }
+  }
+
+  selectSlot(p, slot) {
+    p.buildMode = false;
+    if (slot >= 0 && slot <= 5) p.held = slot;
   }
 
   /* ------------------------------------------------------- 2. movement */
@@ -156,7 +176,6 @@ export class Match {
 
   /* ------------------------------------------------- 3‥6. later systems */
 
-  stageBuild() { this.mark('build'); }
   stageFire() {
     this.mark('fire');
     for (const p of this.players.values()) this.swingPickaxe(p);
@@ -296,7 +315,7 @@ export class Match {
   }
 }
 
-Object.assign(Match.prototype, replicationMethods, structureMethods, harvestMethods);
+Object.assign(Match.prototype, replicationMethods, structureMethods, harvestMethods, buildingMethods);
 
 export function repCellOf(x, z) {
   const i = Math.floor(x / REP_CELL), j = Math.floor(z / REP_CELL);

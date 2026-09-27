@@ -10,7 +10,7 @@ import { WebSocketServer, WebSocket } from 'ws';
 import { Match } from './match.js';
 import { TICK_MS, TICK_HZ } from '../shared/constants.js';
 import { C_INPUT, C_PING, decodeClient, encodePong, Writer } from '../shared/protocol.js';
-import { getWorld, MESAS } from '../shared/worldgen.js';
+import { getWorld } from '../shared/worldgen.js';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const root = path.resolve(here, '..');
@@ -68,11 +68,11 @@ export async function startServer({ port = 3500, host, log = console.log, seed, 
     getSandbox() {
       if (!sandbox || !matches.has(sandbox)) {
         sandbox = new Match({ id: nextMatchId++, mode: 'sandbox', seed: base.seed, log });
-        // The sandbox starts at the foot of the first mesa: a gentle slope up
-        // one side, a lethal drop off the others.
-        const mesa = MESAS[0];
+        // The sandbox starts on the flat edge of Brambleton, with houses to
+        // harvest on one side and open, level ground to build on.
+        const poi = base.pois.find((q) => q.name === 'Brambleton');
         for (let i = 0; i < 24; i++) {
-          sandbox.spawnPoints.push({ x: mesa.x - mesa.r - 150 + (i % 6) * 9, z: mesa.z - 25 + Math.floor(i / 6) * 14 });
+          sandbox.spawnPoints.push({ x: poi.x - 60 + (i % 6) * 9, z: poi.z + poi.r - 8 - Math.floor(i / 6) * 4 });
         }
         matches.add(sandbox);
       }
@@ -125,6 +125,8 @@ export async function startServer({ port = 3500, host, log = console.log, seed, 
     const p = match.addPlayer({ name: conn.name, bot: false });
     const spot = match.spawnPoints[p.id % match.spawnPoints.length];
     match.placeOnGround(p, spot.x, spot.z);
+    p.mats = [300, 300, 300];
+    p.invDirty = true;
     p.conn = conn;
     conn.player = p;
     conn.match = match;

@@ -34,3 +34,22 @@ export function run(s, world, n, input) {
 export const YAW_EAST = -Math.PI / 2;    // forward = +x
 export const YAW_NORTH = 0;              // forward = −z
 export { CELL, WALL_H };
+
+/** A generated-world stand-in with flat ground, for match-level tests. */
+export function flatBase(h = 3 * 3.84 - 0.02) {
+  const heights = new Float32Array(SIDE * SIDE).fill(h);
+  return {
+    seed: 1, heights, terrain: new Terrain(heights), pieces: [], props: [], pois: [], buildings: [],
+    lootSpots: [], chestSpots: [], ammoSpots: [], pregameSpots: [], pregame: { x: 330, z: 330, r: 120, h: 4 }, hash: 0,
+  };
+}
+
+/** A stationary test player standing on the ground at the centre of a cell. */
+export function standIn(match, cx, cz, { name = 'p', team } = {}) {
+  const p = match.addPlayer({ name, bot: true, team });
+  p.botInput = null;
+  match.placeOnGround(p, (cx + 0.5) * CELL, (cz + 0.5) * CELL);
+  return p;
+}
+
+export const YAW = { east: -Math.PI / 2, west: Math.PI / 2, south: Math.PI, north: 0 };

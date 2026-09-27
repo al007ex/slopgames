@@ -20,7 +20,7 @@ export function createPlayer({ id, name, team = id, bot = false, outfit = 0, gli
     history: new Float32Array(HISTORY * 4),   // tick, x, y, z per slot
     bus: false,
     mats: [0, 0, 0], held: 0, nextSwing: 0, swingTick: -100, weak: null, invDirty: false,
-    buildMode: false, using: null,
+    buildMode: false, buildPiece: 0, buildMat: 0, lastPlace: -1e9, using: null,
   };
 }
 

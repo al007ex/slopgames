@@ -18,6 +18,7 @@ import { B_PIECES, B_PROPS, B_HITS } from '#shared/protocol.js';
 import { readPieces, readProps } from '#shared/records.js';
 import { readEvents, EV_HARVEST, EV_BREAK, EV_SWING, EV_IMPACT } from '#shared/events.js';
 import { PICKAXES } from '#shared/cosmetics.js';
+import { BuildController } from './build.js';
 import { ThirdPersonCamera } from './camera.js';
 import { ClientGame } from './game.js';
 import { Net } from './net.js';
@@ -53,9 +54,15 @@ class App {
     this.game.onBlock(B_PIECES, readPieces, (list) => this.game.applyPieces(list, this.pieceHooks));
     this.game.onBlock(B_PROPS, readProps, (list) => this.game.applyProps(list, this.propHooks));
     this.game.onBlock(B_HITS, readEvents, (events) => this.onEvents(events));
-    this.pieceHooks = { added: (p) => this.pieceR.add(p), changed: (p) => this.pieceR.update(p), removed: (p) => this.pieceR.remove(p) };
+    this.pieceHooks = {
+      added: (p) => { this.build.confirmSlot(p); this.pieceR.add(p); },
+      changed: (p) => this.pieceR.update(p),
+      removed: (p) => this.pieceR.remove(p),
+    };
     this.propHooks = { changed: (p) => this.propR.paint(p), removed: (p) => this.propR.remove(p) };
     this.avatars = new Map();
+    this.actions = [];
+    this.build = new BuildController(this);
     window.addEventListener('pointerdown', () => this.audio.unlock());
     window.addEventListener('keydown', () => this.audio.unlock());
     this.state = 'menu';
@@ -81,6 +88,10 @@ class App {
     $('loading').hidden = true;
     $('menu').hidden = false;
     requestAnimationFrame((t) => this.frame(t));
+    // Some embedded views stop animation frames while not being painted; keep
+    // the simulation ticking anyway. Hidden tabs throttle this to 1 Hz, so it
+    // costs nothing there.
+    setInterval(() => { if (performance.now() - this.last > 120) this.frame(performance.now(), false); }, 50);
   }
 
   /** Draws every piece and prop of the client's current world copy. */
@@ -155,6 +166,7 @@ class App {
         this.updateInventory(msg);
         break;
       case 'weak': this.weak.show(msg.x === undefined ? null : msg); break;
+      case 'build-denied': this.build.denied(msg); break;
       case 'joined': this.game.roster.set(msg.player.id, msg.player); break;
       case 'left': this.game.roster.delete(msg.id); break;
       default:
@@ -198,12 +210,13 @@ class App {
 
   /* ------------------------------------------------------------ loop */
 
-  frame(now) {
+  frame(now, fromRaf = true) {
     const dt = Math.min(0.1, (now - this.last) / 1000);
     this.last = now;
-    this.fps = this.fps * 0.95 + (1 / Math.max(dt, 1e-3)) * 0.05;
+    if (fromRaf) this.fps = this.fps * 0.95 + (1 / Math.max(dt, 1e-3)) * 0.05;
     if (this.state === 'match' && this.game.me) this.matchFrame(now, dt);
     else this.menuFrame(now, dt);
+    if (!fromRaf) return;
     this.gfx.renderer.render(this.gfx.scene, this.gfx.camera);
     requestAnimationFrame((t) => this.frame(t));
   }
@@ -226,6 +239,7 @@ class App {
       this.pitch = Math.max(-1.45, Math.min(1.45, this.pitch - mouse.dy * this.input.sensitivity));
     }
     game.advanceRender(now, dt * 1000);
+    this.handlePresses();
 
     // Fixed-rate ticks: sample input, predict, send.
     this.acc += dt * 1000;
@@ -244,12 +258,13 @@ class App {
     const me = game.me;
     const pos = game.localRenderPos(alpha, dt);
     const renderMove = { ...me.move, x: pos.x, y: pos.y, z: pos.z };
-    const ads = this.input.mouse.right && this.input.locked;
+    const ads = this.input.mouse.right && this.input.locked && this.build.mode === 'weapon';
     this.cam.update(dt, renderMove, this.yaw, this.pitch, ads, game.world.grid);
     $('crosshair').classList.toggle('ads', ads);
 
     this.drawPlayers(dt, pos);
     this.pieceR.frame(game.renderTick);
+    this.build.frame(this.input.mouse.left);
     this.fx.update(dt);
     this.weak.update(dt);
     this.audio.listen(this.gfx.camera);
@@ -269,7 +284,47 @@ class App {
   }
 
   updateInventory(msg) {
-    for (let i = 0; i < 3; i++) document.getElementById(`mat-${i}`).textContent = msg.mats[i];
+    this.mats = msg.mats.slice();
+    this.updateMats();
+  }
+
+  updateMats() {
+    for (let i = 0; i < 3; i++) {
+      const el = document.getElementById(`mat-${i}`);
+      el.textContent = this.mats[i];
+      el.parentElement.classList.toggle('selected', this.build.mode === 'build' && this.build.mat === i);
+    }
+  }
+
+  queueAction(a) { this.actions.push(a); }
+  yawQ() { return quantizeYaw(this.yaw); }
+  pitchQ() { return quantizePitch(this.pitch); }
+
+  onBuildMode() {
+    const b = this.build;
+    document.querySelectorAll('#buildbar .piece').forEach((el, i) => el.classList.toggle('active', b.mode === 'build' && b.piece === i));
+    $('buildbar').classList.toggle('on', b.mode !== 'weapon');
+    $('buildbar').dataset.mode = b.mode;
+    this.updateMats();
+  }
+
+  hudNote(text) {
+    const n = $('note');
+    n.textContent = text;
+    n.classList.add('show');
+    clearTimeout(this.noteTimer);
+    this.noteTimer = setTimeout(() => n.classList.remove('show'), 1200);
+  }
+
+  /** Key presses and clicks, handled once per frame. */
+  handlePresses() {
+    for (const action of this.input.takePresses()) {
+      if (this.build.onPress(action)) continue;
+      this.onPress?.(action);
+    }
+    for (const button of this.input.takeClicks()) {
+      if (this.build.onClick(button)) continue;
+    }
   }
 
   sampleInput() {
@@ -283,14 +338,15 @@ class App {
       if (inp.held('jump')) buttons |= BTN_JUMP;
       if (inp.held('sprint')) buttons |= BTN_SPRINT;
       if (inp.held('crouch')) buttons |= BTN_CROUCH;
-      if (mouseOn && inp.mouse.left) buttons |= BTN_FIRE;
-      if (mouseOn && inp.mouse.right) buttons |= BTN_ADS;
+      const weapon = this.build.mode === 'weapon';
+      if (weapon && mouseOn && inp.mouse.left) buttons |= BTN_FIRE;
+      if (weapon && mouseOn && inp.mouse.right) buttons |= BTN_ADS;
       if (inp.held('interact')) buttons |= BTN_USE;
       buttons |= this.forceButtons || 0;     // test hook: hold buttons without a captured mouse
     }
     return {
       mx: axis('right', 'left'), mz: axis('forward', 'back'),
-      yaw: quantizeYaw(this.yaw), pitch: quantizePitch(this.pitch), buttons, actions: [],
+      yaw: quantizeYaw(this.yaw), pitch: quantizePitch(this.pitch), buttons, actions: this.actions.splice(0, 16),
     };
   }
 
@@ -301,7 +357,8 @@ class App {
     const mine = this.avatarFor(me.id);
     const sp = Math.sqrt(me.move.vx * me.move.vx + me.move.vz * me.move.vz);
     const now = performance.now();
-    mine.hold('pickaxe', () => pickaxeMesh(this.game.roster.get(me.id)?.pickaxe || 0));
+    if (this.build.mode === 'weapon') mine.hold('pickaxe', () => pickaxeMesh(this.game.roster.get(me.id)?.pickaxe || 0));
+    else mine.hold(null);
     mine.update(dt, { ...me.move, x: pos.x, y: pos.y, z: pos.z, yaw: this.yaw, pitch: this.pitch, speed: sp, armed: false, swing: swingPhase(now - this.swingAt) });
     seen.add(me.id);
     for (const s of game.remoteStates(this.remote)) {

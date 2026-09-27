@@ -82,3 +82,14 @@ button { font: inherit; cursor: pointer; }
 .slot em { position: absolute; left: 5px; top: 2px; font-size: 11px; font-style: normal; opacity: 0.75; }
 .slot b { position: absolute; right: 5px; bottom: 2px; font-size: 12px; }
 .icon.pick { width: 34px; height: 34px; background: linear-gradient(45deg, transparent 44%, #8a6040 44%, #8a6040 56%, transparent 56%), linear-gradient(-45deg, transparent 30%, #c4ccd4 30%, #c4ccd4 42%, transparent 42%); background-size: 100% 100%; }
+.buildbar { position: absolute; left: 50%; bottom: 80px; transform: translateX(-50%); display: flex; gap: 6px; align-items: center; opacity: 0.55; transition: opacity 0.15s; }
+.buildbar.on { opacity: 1; }
+.buildbar .piece { position: relative; width: 46px; height: 46px; border-radius: 8px; background: rgba(0, 0, 0, 0.45); border: 2px solid rgba(255, 255, 255, 0.14); display: grid; place-items: center; }
+.buildbar .piece svg { width: 26px; height: 26px; fill: #9fd8ff; opacity: 0.85; }
+.buildbar .piece.active { border-color: #5fc8ff; background: rgba(40, 110, 170, 0.55); transform: translateY(-3px); }
+.buildbar .piece em { position: absolute; left: 4px; top: 1px; font-size: 10px; font-style: normal; opacity: 0.8; }
+.build-hint { display: none; margin-left: 8px; font: 12px var(--body); color: var(--muted); text-shadow: 0 1px 2px #000; }
+.buildbar.on .build-hint { display: inline; }
+.buildbar[data-mode=edit] .build-hint::before { content: 'EDITING — click tiles · G confirm · RMB reset — '; color: #9fd8ff; }
+.note { position: absolute; left: 50%; top: 58%; transform: translateX(-50%); font: 600 14px var(--body); color: #ffd0d0; text-shadow: 0 1px 3px #000; opacity: 0; transition: opacity 0.25s; }
+.note.show { opacity: 1; }
