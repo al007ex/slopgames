@@ -42,7 +42,10 @@ export const replicationMethods = {
   writeBlocks(w, conn, focus) {
     if (!focus) return;
     if (!conn.known) conn.known = new Uint32Array(REP_N * REP_N);
-    const pieces = [], props = [], items = [], chests = [];
+    // Scratch lists reused across clients and ticks: no garbage per snapshot.
+    const sc = this.repScratch || (this.repScratch = { pieces: [], props: [], items: [], chests: [], near: [] });
+    const { pieces, props, items, chests } = sc;
+    pieces.length = props.length = items.length = chests.length = 0;
     const span = Math.ceil(NEAR_RADIUS / REP_CELL);
     const ci = Math.floor(focus.x / REP_CELL), cj = Math.floor(focus.z / REP_CELL);
     let records = 0;
@@ -83,7 +86,8 @@ export const replicationMethods = {
     this.writeProjectiles?.(w, focus);
     // Events near the focus: hits, breaks, shots, explosions.
     if (this.events.length) {
-      const near = [];
+      const near = sc.near;
+      near.length = 0;
       const r2 = NEAR_RADIUS * NEAR_RADIUS;
       for (const e of this.events) {
         const dx = e.x - focus.x, dz = e.z - focus.z;

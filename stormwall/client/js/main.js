@@ -27,6 +27,8 @@ import { B_ITEMS, B_CHESTS, A_INTERACT, A_DROP } from '#shared/protocol.js';
 import { EV_CHEST, EV_PICKUP } from '#shared/events.js';
 import { itemName } from '#shared/items.js';
 import { viewDir } from '#shared/aim.js';
+import { StormView } from './storm.js';
+import { MapView } from './map.js';
 import { WEAPONS, itemKey, itemId } from '#shared/items.js';
 import { EV_SHOT, EV_EXPLOSION, EV_RELOAD } from '#shared/events.js';
 import { B_PROJECTILES } from '#shared/protocol.js';
@@ -92,6 +94,8 @@ class App {
     this.actions = [];
     this.build = new BuildController(this);
     this.loadout = new Loadout(this);
+    this.storm = new StormView(this);
+    this.map = new MapView(this, this.terrain.colors, this.base.terrain, this.base.pois);
     window.addEventListener('pointerdown', () => this.audio.unlock());
     window.addEventListener('keydown', () => this.audio.unlock());
     this.state = 'menu';
@@ -197,7 +201,7 @@ class App {
         if (msg.hash !== this.base.hash) console.error(`World mismatch: server ${msg.hash}, client ${this.base.hash}`);
         break;
       case 'match':
-        if (this.game.freshWorld(msg.id)) { this.fillRenderers(); this.loot.clear(); }
+        if (this.game.freshWorld(msg.id)) { this.fillRenderers(); this.loot.clear(); this.storm.clear(); }
         this.game.start(msg);
         this.state = 'match';
         $('menu').hidden = true;
@@ -220,6 +224,7 @@ class App {
         this.loadout.sync(msg);
         break;
       case 'hit': this.loadout.onHit(msg); break;
+      case 'storm': this.storm.set(msg); break;
       case 'note': this.hudNote(msg.text); break;
       case 'feed': this.addFeed(msg); break;
       case 'weak': this.weak.show(msg.x === undefined ? null : msg); break;
@@ -327,6 +332,8 @@ class App {
     this.shotFx.update(dt);
     this.loot.frame(dt, this.gfx.camera.position, pos);
     this.updatePrompt(pos);
+    this.storm.frame(dt, pos);
+    this.map.frame(pos, this.yaw, this.storm.state, this.teammateMarks?.() || []);
 
     this.drawPlayers(dt, pos);
     this.pieceR.frame(game.renderTick);
@@ -393,6 +400,7 @@ class App {
         continue;
       }
       if (action === 'drop' && this.loadout.held > 0) { this.queueAction({ type: A_DROP, slot: this.loadout.held }); continue; }
+      if (action === 'map') { this.map.toggle(); continue; }
       this.onPress?.(action);
     }
     for (const button of this.input.takeClicks()) {

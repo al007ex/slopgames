@@ -136,6 +136,8 @@ export async function startServer({ port = 3500, host, log = console.log, seed, 
       roster: [...match.players.values()].map((q) => ({ id: q.id, name: q.name, team: q.team, bot: q.bot, outfit: q.outfit })),
     });
     for (const other of match.conns) if (other !== conn) other.sendJson({ t: 'joined', player: { id: p.id, name: p.name, team: p.team, bot: false, outfit: p.outfit } });
+    const storm = match.stormMessage();
+    if (storm) conn.sendJson(storm);
     conn.ready = true;
   }
 
@@ -163,6 +165,11 @@ export async function startServer({ port = 3500, host, log = console.log, seed, 
         return;
       case 'leave':
         leaveMatch(conn);
+        return;
+      case 'dev':
+        // Development helpers, never available in production.
+        if (process.env.NODE_ENV === 'production' || !conn.match || conn.match.mode !== 'sandbox') return;
+        if (msg.cmd === 'storm') conn.match.startStorm(conn.match.tick, [{ wait: 15, shrink: 30, dps: 5, ratio: 0.3 }, { wait: 20, shrink: 30, dps: 10, ratio: 0 }]);
         return;
       default:
     }

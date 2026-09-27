@@ -15,6 +15,7 @@
 <body>
 <canvas id="view"></canvas>
 
+<div id="storm-tint" class="storm-tint"></div>
 <div id="vignette" class="vignette"></div>
 <div id="hud" hidden>
   <div id="crosshair" class="crosshair"><i></i><i></i><i></i><i></i><b></b></div>
@@ -25,6 +26,13 @@
   </div>
   <div id="note" class="note"></div>
   <ol id="feed" class="feed"></ol>
+  <div class="topright">
+    <canvas id="minimap" class="minimap" width="200" height="200"></canvas>
+    <div id="storm-timer" class="storm-timer" hidden><i></i><span></span> <b></b></div>
+    <div id="storm-dist" class="storm-dist"></div>
+    <div id="counters" class="counters"></div>
+  </div>
+  <div id="mapview" class="mapview" hidden><canvas id="fullmap" width="900" height="900"></canvas><p>M to close</p></div>
   <div id="prompt" class="prompt" hidden></div>
   <div id="scope" class="scope" hidden></div>
   <div id="progress" class="progress" hidden><span></span><b></b></div>

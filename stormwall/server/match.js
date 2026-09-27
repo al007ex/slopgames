@@ -23,6 +23,7 @@ import { harvestMethods } from './harvest.js';
 import { buildingMethods } from './building.js';
 import { combatMethods, EQUIP_TICKS } from './combat.js';
 import { lootMethods } from './loot.js';
+import { stormMethods } from './storm.js';
 import { A_SLOT, A_BUILD, A_MAT, A_PLACE, A_EDIT, A_RELOAD, A_INTERACT, A_DROP, PF_ADS, PF_BUILD, PF_FIRING, PF_USING, PF_HARVEST } from '../shared/protocol.js';
 import { itemId } from '../shared/items.js';
 import { BTN_ADS } from '../shared/movement.js';
@@ -279,7 +280,6 @@ export class Match {
       p.conn?.sendJson({ t: 'respawned' });
     }
   }
-  stageStorm() { this.mark('storm'); }
 
   /* ---------------------------------------------------- 7. replication */
 
@@ -373,7 +373,7 @@ export class Match {
   }
 }
 
-Object.assign(Match.prototype, replicationMethods, structureMethods, harvestMethods, buildingMethods, combatMethods, lootMethods);
+Object.assign(Match.prototype, replicationMethods, structureMethods, harvestMethods, buildingMethods, combatMethods, lootMethods, stormMethods);
 
 export function repCellOf(x, z) {
   const i = Math.floor(x / REP_CELL), j = Math.floor(z / REP_CELL);

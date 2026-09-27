@@ -116,3 +116,17 @@ button { font: inherit; cursor: pointer; }
 .prompt { position: absolute; left: 50%; top: 62%; transform: translateX(-50%); font: 700 15px var(--body); background: rgba(0,0,0,0.5); padding: 6px 12px; border-radius: 6px; text-shadow: 0 1px 2px #000; }
 .prompt kbd { display: inline-block; min-width: 22px; padding: 1px 6px; margin-right: 6px; border-radius: 4px; background: #fff; color: #111; font: 800 13px var(--body); text-align: center; }
 .prompt .r0 { color: var(--common); } .prompt .r1 { color: var(--uncommon); } .prompt .r2 { color: var(--rare); } .prompt .r3 { color: var(--epic); } .prompt .r4 { color: var(--legendary); }
+.storm-tint { position: fixed; inset: 0; pointer-events: none; z-index: 8; background: radial-gradient(ellipse at center, rgba(120, 50, 220, 0.18), rgba(90, 30, 180, 0.55)); opacity: 0; transition: opacity 0.6s; }
+.storm-tint.on { opacity: 1; }
+.topright { position: absolute; right: 16px; top: 16px; display: grid; gap: 6px; justify-items: end; }
+.minimap { width: 200px; height: 200px; border-radius: 10px; border: 2px solid rgba(255,255,255,0.35); box-shadow: 0 4px 16px rgba(0,0,0,0.45); }
+.storm-timer { font: 600 13px var(--body); background: rgba(0,0,0,0.5); padding: 4px 10px; border-radius: 6px; display: flex; align-items: center; gap: 6px; }
+.storm-timer i { width: 10px; height: 10px; border-radius: 50%; background: var(--storm); box-shadow: 0 0 8px var(--storm); }
+.storm-timer b { font: italic 900 16px var(--display); }
+.storm-timer.shrinking b { color: #d9b8ff; }
+.storm-dist { font: 600 12px var(--body); color: #e6d6ff; text-shadow: 0 1px 2px #000; min-height: 14px; }
+.counters { display: flex; gap: 8px; font: italic 900 16px var(--display); text-shadow: 0 1px 3px #000; }
+.counters span { background: rgba(0,0,0,0.45); padding: 3px 9px; border-radius: 6px; }
+.mapview { position: fixed; inset: 0; z-index: 15; display: grid; place-items: center; background: rgba(5, 8, 16, 0.72); pointer-events: none; }
+.mapview canvas { width: min(88vh, 92vw); height: min(88vh, 92vw); border-radius: 12px; border: 2px solid rgba(255,255,255,0.3); box-shadow: 0 20px 60px rgba(0,0,0,0.6); }
+.mapview p { position: absolute; bottom: 12px; color: var(--muted); font-size: 13px; }

@@ -167,6 +167,26 @@ export class Audio {
     [523, 659, 784, 1047].forEach((f, i) => setTimeout(() => this.tone(pos, { freq: f, gain: 0.18, dur: 0.35, type: 'triangle', range: 40 }), i * 70));
   }
 
+  /** A low rumbling wind while you are in the storm; fades in and out. */
+  storm(on) {
+    if (!this.ctx) return;
+    if (!this.stormNode) {
+      const src = this.ctx.createBufferSource();
+      src.buffer = this.noise;
+      src.loop = true;
+      const f = this.ctx.createBiquadFilter();
+      f.type = 'lowpass'; f.frequency.value = 380; f.Q.value = 0.7;
+      const g = this.ctx.createGain();
+      g.gain.value = 0;
+      src.connect(f).connect(g).connect(this.master);
+      src.start();
+      this.stormNode = g;
+    }
+    const target = on ? 0.5 : 0;
+    const g = this.stormNode.gain;
+    g.value += (target - g.value) * 0.05;
+  }
+
   pickup() { this.tone(null, { freq: 700, to: 1100, gain: 0.12, dur: 0.1, type: 'triangle' }); }
 
   hitmark(head, shield) { this.tone(null, { freq: head ? 1500 : shield ? 900 : 1100, to: head ? 1900 : undefined, gain: 0.12, dur: 0.07, type: head ? 'triangle' : 'sine' }); }

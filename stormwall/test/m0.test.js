@@ -143,8 +143,11 @@ section('100 connected clients at a stable tick');
     }
   }, 1000 / 30);
   const match = [...server.matches][0];
+  await new Promise((r) => setTimeout(r, 1000));     // let the burst of joins settle
   const tick0 = match.tick;
   for (const c of clients) c.snaps = 0;
+  match.stats.recent.length = 0;                      // measure the steady state
+  match.stats.maxMs = 0;
   const started = performance.now();
   await new Promise((r) => setTimeout(r, 6000));
   const seconds = (performance.now() - started) / 1000;
