@@ -29,6 +29,8 @@ import { itemName } from '#shared/items.js';
 import { viewDir } from '#shared/aim.js';
 import { StormView } from './storm.js';
 import { MapView } from './map.js';
+import { MatchFlow } from './flow.js';
+import { MODE_BUS, MODE_DEAD } from '#shared/movement.js';
 import { WEAPONS, itemKey, itemId } from '#shared/items.js';
 import { EV_SHOT, EV_EXPLOSION, EV_RELOAD } from '#shared/events.js';
 import { B_PROJECTILES } from '#shared/protocol.js';
@@ -96,6 +98,8 @@ class App {
     this.loadout = new Loadout(this);
     this.storm = new StormView(this);
     this.map = new MapView(this, this.terrain.colors, this.base.terrain, this.base.pois);
+    this.flow = new MatchFlow(this);
+    this.mode = localStorage.getItem('sw.mode') || 'solo';
     window.addEventListener('pointerdown', () => this.audio.unlock());
     window.addEventListener('keydown', () => this.audio.unlock());
     this.state = 'menu';
@@ -114,6 +118,11 @@ class App {
 
     $('name').value = localStorage.getItem('sw.name') || '';
     $('play').onclick = () => this.play();
+    $('cancel').onclick = () => { this.net.sendJson({ t: 'cancel' }); this.showQueue(false); };
+    for (const b of document.querySelectorAll('#modes button')) b.onclick = () => this.pickMode(b.dataset.mode);
+    this.pickMode(this.mode);
+    $('res-lobby').onclick = () => { this.net.sendJson({ t: 'leave' }); this.toLobby(); };
+    $('res-spectate').onclick = () => { $('results').hidden = true; };
     $('name').addEventListener('keydown', (e) => { if (e.key === 'Enter') this.play(); });
     $('click-to-play').onclick = () => this.input.lock();
     document.addEventListener('pointerlockchange', () => this.updateLockPrompt());
@@ -186,13 +195,45 @@ class App {
     }
   }
 
+  pickMode(mode) {
+    this.mode = mode;
+    localStorage.setItem('sw.mode', mode);
+    for (const b of document.querySelectorAll('#modes button')) b.classList.toggle('on', b.dataset.mode === mode);
+    $('mode-hint').textContent = {
+      solo: '100 players, every one for themselves. Matches fill with bots.',
+      duos: 'Teams of two. Knocked players can be revived. Fills with bots.',
+      squads: 'Teams of four. Knocked players can be revived. Fills with bots.',
+      practice: 'A sandbox with a full kit and materials. Nobody wins here.',
+    }[mode];
+  }
+
   play() {
     const name = $('name').value.trim().slice(0, 16) || 'Player';
     localStorage.setItem('sw.name', name);
+    this.audio.unlock();
     this.net.sendJson({ t: 'hello', name });
-    this.net.sendJson({ t: 'play', mode: 'sandbox' });
-    $('play').disabled = true;
+    if (this.mode === 'practice') this.net.sendJson({ t: 'practice' });
+    else { this.net.sendJson({ t: 'queue', mode: this.mode }); this.showQueue(true); }
     this.input.lock();
+  }
+
+  showQueue(on, text = 'Finding a match…') {
+    $('queue-status').hidden = !on;
+    $('play').hidden = on;
+    $('queue-status').querySelector('span').textContent = text;
+  }
+
+  /** Back to the menu: the match is over or we left it. */
+  toLobby() {
+    this.state = 'menu';
+    this.flow.reset();
+    this.showQueue(false);
+    $('hud').hidden = true;
+    $('menu').hidden = false;
+    $('results').hidden = true;
+    $('vignette').className = 'vignette';
+    this.input.unlock();
+    this.updateLockPrompt();
   }
 
   onJson(msg) {
@@ -202,6 +243,8 @@ class App {
         break;
       case 'match':
         if (this.game.freshWorld(msg.id)) { this.fillRenderers(); this.loot.clear(); this.storm.clear(); }
+        this.flow.reset();
+        this.showQueue(false);
         this.game.start(msg);
         this.state = 'match';
         $('menu').hidden = true;
@@ -211,6 +254,7 @@ class App {
         break;
       case 'hurt': this.flash(); break;
       case 'died':
+        this.flow.spectating = msg.by;
         $('vignette').classList.add('dead');
         this.toast(msg.cause === 'fall' ? 'YOU FELL TO YOUR DEATH' : 'ELIMINATED', 3000);
         break;
@@ -225,8 +269,14 @@ class App {
         break;
       case 'hit': this.loadout.onHit(msg); break;
       case 'storm': this.storm.set(msg); break;
+      case 'phase': this.flow.onPhase(msg); break;
+      case 'alive': this.flow.onAlive(msg); break;
+      case 'results': this.flow.onResults(msg); break;
+      case 'roster': for (const p of msg.players) this.game.roster.set(p.id, p); break;
+      case 'queue': this.showQueue(true, `Waiting for a free server slot — ${msg.position} in line`); break;
+      case 'lobby': this.toLobby(); break;
       case 'note': this.hudNote(msg.text); break;
-      case 'feed': this.addFeed(msg); break;
+      case 'feed': this.addFeed(msg); this.flow.onFeed(msg); break;
       case 'weak': this.weak.show(msg.x === undefined ? null : msg); break;
       case 'build-denied': this.build.denied(msg); break;
       case 'joined': this.game.roster.set(msg.player.id, msg.player); break;
@@ -259,9 +309,7 @@ class App {
   }
 
   onDisconnect() {
-    this.state = 'menu';
-    $('hud').hidden = true;
-    $('menu').hidden = false;
+    this.toLobby();
     $('loading-text').textContent = 'Connection lost — reconnecting…';
     setTimeout(() => this.net.connect(), 1500);
   }
@@ -324,7 +372,15 @@ class App {
     const ads = ((this.input.mouse.right && this.input.locked) || (this.forceButtons & BTN_ADS)) && this.build.mode === 'weapon';
     const w = this.loadout.weapon;
     const scope = ads && w && WEAPONS[w.key].scope;
-    this.cam.update(dt, renderMove, this.yaw, this.pitch, ads, game.world.grid, scope || 55);
+    const view = this.flow.frame(dt, me);
+    if (view?.pos) {
+      // Riding the blimp: orbit it.
+      this.gfx.camera.position.copy(view.pos);
+      this.gfx.camera.lookAt(view.look);
+    } else if (view?.spectate) {
+      const s = view.spectate;
+      this.cam.update(dt, { x: s.x, y: s.y, z: s.z, crouch: s.flags & 1, mode: s.mode }, s.yaw, s.pitch, false, game.world.grid, 55);
+    } else this.cam.update(dt, renderMove, this.yaw, this.pitch, ads, game.world.grid, scope || 55);
     $('crosshair').style.setProperty('--spread', `${this.loadout.crosshairGap(ads)}px`);
     $('crosshair').hidden = !!scope && this.cam.adsBlend > 0.8;
     $('scope').hidden = !(scope && this.cam.adsBlend > 0.8);
@@ -401,6 +457,7 @@ class App {
       }
       if (action === 'drop' && this.loadout.held > 0) { this.queueAction({ type: A_DROP, slot: this.loadout.held }); continue; }
       if (action === 'map') { this.map.toggle(); continue; }
+      if (action === 'jump' && this.game.me?.move.mode === MODE_BUS) { this.flow.jump(); continue; }
       this.onPress?.(action);
     }
     for (const button of this.input.takeClicks()) {

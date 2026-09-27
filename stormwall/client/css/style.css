@@ -130,3 +130,27 @@ button { font: inherit; cursor: pointer; }
 .mapview { position: fixed; inset: 0; z-index: 15; display: grid; place-items: center; background: rgba(5, 8, 16, 0.72); pointer-events: none; }
 .mapview canvas { width: min(88vh, 92vw); height: min(88vh, 92vw); border-radius: 12px; border: 2px solid rgba(255,255,255,0.3); box-shadow: 0 20px 60px rgba(0,0,0,0.6); }
 .mapview p { position: absolute; bottom: 12px; color: var(--muted); font-size: 13px; }
+.modes { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; margin-bottom: 8px; }
+.modes button { padding: 9px 4px; border-radius: 9px; border: 1px solid var(--line); background: rgba(255,255,255,0.05); color: var(--text); font: 700 14px var(--body); }
+.modes button.on { background: rgba(255, 207, 63, 0.18); border-color: var(--gold); color: var(--gold); }
+.mode-hint { margin: 0 0 12px; min-height: 18px; }
+.ghost { margin-top: 10px; width: 100%; padding: 10px; border-radius: 10px; border: 1px solid var(--line); background: transparent; color: var(--muted); font: 600 14px var(--body); }
+.ghost:hover { color: var(--text); border-color: rgba(255,255,255,0.35); }
+.queue-status { display: grid; grid-template-columns: auto 1fr; align-items: center; gap: 10px; margin-top: 12px; text-align: left; }
+.queue-status .spinner { margin: 0; width: 20px; height: 20px; }
+.queue-status .ghost { grid-column: 1 / -1; margin-top: 2px; }
+.banner { position: absolute; left: 50%; top: 18px; transform: translateX(-50%); text-align: center; background: rgba(0,0,0,0.45); padding: 8px 18px; border-radius: 10px; }
+.banner small { display: block; font: 600 11px var(--body); letter-spacing: 1px; color: var(--muted); }
+.banner b { font: italic 900 22px var(--display); }
+.jump-prompt { position: absolute; left: 50%; bottom: 140px; transform: translateX(-50%); font: 700 18px var(--body); background: rgba(0,0,0,0.5); padding: 8px 16px; border-radius: 8px; }
+.jump-prompt kbd { display: inline-block; padding: 1px 8px; margin-right: 6px; border-radius: 4px; background: #fff; color: #111; font: 800 14px var(--body); }
+.spectating { position: absolute; left: 50%; bottom: 120px; transform: translateX(-50%); font: 600 14px var(--body); background: rgba(0,0,0,0.5); padding: 6px 14px; border-radius: 8px; }
+.results { background: rgba(8, 10, 20, 0.55); }
+.results .kicker { font: italic 900 64px var(--display); margin: 0; color: #fff; text-shadow: 0 6px 0 rgba(0,0,0,0.35); }
+.results.victory .kicker { color: var(--gold); text-shadow: 0 6px 0 #b3781a, 0 0 40px rgba(255, 207, 63, 0.6); }
+.res-sub { color: var(--muted); margin: 4px 0 16px; }
+.res-stats { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin: 0 0 12px; }
+.res-stats div { background: rgba(255,255,255,0.05); border-radius: 10px; padding: 10px 6px; }
+.res-stats dt { font-size: 12px; color: var(--muted); }
+.res-stats dd { margin: 4px 0 0; font: italic 900 24px var(--display); }
+.res-xp { color: #9fd8ff; font-weight: 700; min-height: 18px; }

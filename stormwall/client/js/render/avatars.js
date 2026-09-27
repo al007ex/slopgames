@@ -94,6 +94,7 @@ export class Avatar {
     const visible = s.mode !== MODE_BUS && s.mode !== MODE_DEAD;
     this.object.visible = visible;
     if (!visible) return;
+    this.hand.visible = s.mode !== MODE_SKYDIVE && s.mode !== MODE_GLIDE;
     const speed = s.speed || 0;
     this.phase += dt * speed * 1.9;
     const swing = Math.sin(this.phase) * Math.min(1, speed / 4.5) * 0.7;

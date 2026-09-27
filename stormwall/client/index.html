@@ -25,6 +25,9 @@
     <div class="bar health"><span id="hp-fill"></span><b id="hp-num">100</b></div>
   </div>
   <div id="note" class="note"></div>
+  <div id="banner" class="banner" hidden></div>
+  <div id="jump-prompt" class="jump-prompt" hidden></div>
+  <div id="spectating" class="spectating" hidden></div>
   <ol id="feed" class="feed"></ol>
   <div class="topright">
     <canvas id="minimap" class="minimap" width="200" height="200"></canvas>
@@ -65,12 +68,35 @@
 </section>
 
 <section id="menu" class="screen" hidden>
-  <div class="card">
+  <div class="card lobby">
     <h1 class="logo">STORM<span>WALL</span></h1>
     <p class="tag">Drop in. Build up. Outlast the storm.</p>
     <input id="name" type="text" maxlength="16" placeholder="Your name" autocomplete="off" spellcheck="false" />
+    <div id="modes" class="modes" role="tablist">
+      <button type="button" data-mode="solo" class="on">Solo</button>
+      <button type="button" data-mode="duos">Duos</button>
+      <button type="button" data-mode="squads">Squads</button>
+      <button type="button" data-mode="practice">Practice</button>
+    </div>
+    <p id="mode-hint" class="hint mode-hint">100 players. Matches fill with bots when there are not enough people.</p>
     <button id="play" class="play" type="button">Play</button>
-    <p class="hint">WASD move · Shift sprint · Space jump · C crouch · mouse aim</p>
+    <div id="queue-status" class="queue-status" hidden><i class="spinner"></i><span>Finding a match…</span><button id="cancel" class="ghost" type="button">Cancel</button></div>
+    <p class="hint">WASD move · Shift sprint · Space jump · C crouch · mouse aim · Q/F/Z/X build · G edit · E use · M map</p>
+  </div>
+</section>
+
+<section id="results" class="screen results" hidden>
+  <div class="card">
+    <p class="kicker" id="res-place">#1</p>
+    <p class="res-sub" id="res-sub"></p>
+    <dl class="res-stats">
+      <div><dt>Eliminations</dt><dd id="res-kills">0</dd></div>
+      <div><dt>Damage</dt><dd id="res-damage">0</dd></div>
+      <div><dt>Survived</dt><dd id="res-time">0:00</dd></div>
+    </dl>
+    <p class="res-xp" id="res-xp"></p>
+    <button id="res-lobby" class="play" type="button">Back to lobby</button>
+    <button id="res-spectate" class="ghost" type="button">Spectate</button>
   </div>
 </section>
 

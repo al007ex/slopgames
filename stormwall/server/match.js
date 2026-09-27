@@ -24,7 +24,9 @@ import { buildingMethods } from './building.js';
 import { combatMethods, EQUIP_TICKS } from './combat.js';
 import { lootMethods } from './loot.js';
 import { stormMethods } from './storm.js';
-import { A_SLOT, A_BUILD, A_MAT, A_PLACE, A_EDIT, A_RELOAD, A_INTERACT, A_DROP, PF_ADS, PF_BUILD, PF_FIRING, PF_USING, PF_HARVEST } from '../shared/protocol.js';
+import { flowMethods, TEAM_SIZES } from './flow.js';
+import { botMethods } from './bots.js';
+import { A_SLOT, A_BUILD, A_MAT, A_PLACE, A_EDIT, A_RELOAD, A_INTERACT, A_DROP, A_JUMP, PF_ADS, PF_BUILD, PF_FIRING, PF_USING, PF_HARVEST } from '../shared/protocol.js';
 import { itemId } from '../shared/items.js';
 import { BTN_ADS } from '../shared/movement.js';
 
@@ -35,7 +37,7 @@ const MAX_QUEUE = 8;
 const STALL_TICKS = 6;        // no input for this long and gravity takes over
 
 export class Match {
-  constructor({ id = 1, mode = 'sandbox', seed = MAP_SEED, rngSeed = Date.now() >>> 0, log = null, trace = false, base = null, loot = true } = {}) {
+  constructor({ id = 1, mode = 'sandbox', seed = MAP_SEED, rngSeed = Date.now() >>> 0, log = null, trace = false, base = null, loot = true, flow = null } = {}) {
     this.id = id;
     this.mode = mode;
     this.seed = seed;
@@ -58,6 +60,8 @@ export class Match {
     this.initReplication();
     this.initLoot();
     if (loot) this.spawnLoot();
+    this.phase = null;
+    if (TEAM_SIZES[mode]) this.initFlow(flow || {});
   }
 
   addPlayer(opts) {
@@ -113,6 +117,8 @@ export class Match {
   stageInput() {
     this.mark('input');
     if (this.mode === 'sandbox') this.sandboxRespawns();
+    if (this.phase) this.stageFlow();
+    this.driveBots();
     for (const p of this.players.values()) {
       p.consumed = null;
       if (p.bot) continue;
@@ -143,6 +149,7 @@ export class Match {
       case A_RELOAD: this.startReload(p); break;
       case A_INTERACT: this.tryInteract(p, a); break;
       case A_DROP: this.dropSlot(p, a.slot); break;
+      case A_JUMP: if (p.move.mode === MODE_BUS) p.wantsJump = true; break;
       default: this.onOtherAction?.(p, a);
     }
   }
@@ -229,6 +236,7 @@ export class Match {
       amount -= soaked;
     }
     p.hp -= amount;
+    p.lastHurtTick = this.tick;
     p.conn?.sendJson({ t: 'hurt', amount: Math.round(d.amount), kind: d.kind, from: d.source?.id || 0 });
     const src = d.source;
     if (src && src !== p) {
@@ -251,6 +259,10 @@ export class Match {
     p.diedAt = this.tick;
     p.conn?.sendJson({ t: 'died', cause: d.kind || 'unknown', by: d.source?.id || 0 });
     if (this.mode === 'sandbox') p.respawnAt = this.tick + 3 * TICK_HZ;
+    this.aliveDirty = true;
+    if (this.phase && !d.finishing) this.teamCheck(p.team);
+    if (p.conn && killer) p.conn.spectating = killer.id;
+    for (const conn of this.conns) if (conn.spectating === p.id) conn.spectating = killer ? killer.id : 0;
   }
 
   /** Practice mode gives everyone materials and a full kit to try things with. */
@@ -306,9 +318,31 @@ export class Match {
       conn.send(this.snapshotFor(conn));
     }
     this.events.length = 0;
+    if (this.aliveDirty && this.phase) {
+      this.aliveDirty = false;
+      const msg = { t: 'alive', players: this.aliveCount(), teams: this.aliveTeams().size };
+      for (const conn of this.conns) conn.sendJson(msg);
+    }
     for (const p of this.players.values()) {
       if (p.invDirty) { p.invDirty = false; p.conn?.sendJson(this.inventoryMessage(p)); }
     }
+  }
+
+  rosterEntry(p) {
+    return { id: p.id, name: p.name, team: p.team, bot: p.bot, outfit: p.outfit, glider: p.glider, pickaxe: p.pickaxe };
+  }
+
+  matchMessage(p) {
+    return {
+      t: 'match', id: this.id, mode: this.mode, seed: this.seed, hash: this.base.hash,
+      you: p.id, team: p.team, tick: this.tick, tickHz: TICK_HZ, teamSize: this.teamSize || 1,
+      roster: [...this.players.values()].map((q) => this.rosterEntry(q)),
+    };
+  }
+
+  broadcastRoster() {
+    const msg = { t: 'roster', players: [...this.players.values()].map((q) => this.rosterEntry(q)) };
+    for (const conn of this.conns) conn.sendJson(msg);
   }
 
   inventoryMessage(p) {
@@ -345,7 +379,7 @@ export class Match {
       for (let j = Math.max(0, cj - span); j <= Math.min(REP_N - 1, cj + span); j++) {
         for (let i = Math.max(0, ci - span); i <= Math.min(REP_N - 1, ci + span); i++) {
           for (const p of this.repBuckets[j * REP_N + i]) {
-            if (p === me) continue;
+            if (p === me || p.move.mode === MODE_BUS) continue;
             const dx = p.move.x - focus.x, dz = p.move.z - focus.z;
             const d2 = dx * dx + dz * dz;
             if (d2 > r2 || (!far && d2 > r2near)) continue;
@@ -373,7 +407,7 @@ export class Match {
   }
 }
 
-Object.assign(Match.prototype, replicationMethods, structureMethods, harvestMethods, buildingMethods, combatMethods, lootMethods, stormMethods);
+Object.assign(Match.prototype, replicationMethods, structureMethods, harvestMethods, buildingMethods, combatMethods, lootMethods, stormMethods, flowMethods, botMethods);
 
 export function repCellOf(x, z) {
   const i = Math.floor(x / REP_CELL), j = Math.floor(z / REP_CELL);

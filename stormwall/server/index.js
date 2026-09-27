@@ -8,6 +8,7 @@ import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { WebSocketServer, WebSocket } from 'ws';
 import { Match } from './match.js';
+import { Lobby } from './lobby.js';
 import { TICK_MS, TICK_HZ } from '../shared/constants.js';
 import { C_INPUT, C_PING, decodeClient, encodePong, Writer } from '../shared/protocol.js';
 import { getWorld } from '../shared/worldgen.js';
@@ -54,21 +55,21 @@ function addressOf(req) {
   return forwarded || remote || 'unknown';
 }
 
-export async function startServer({ port = 3500, host, log = console.log, seed, maxPerIp = MAX_PER_IP } = {}) {
+export async function startServer({ port = 3500, host, log = console.log, seed, maxPerIp = MAX_PER_IP, pregameSeconds, maxMatches } = {}) {
   const base = getWorld(seed);
   const conns = new Set();
-  const matches = new Set();
   let sandbox = null;
   let nextConnId = 1;
-  let nextMatchId = 1;
   const pong = new Writer(16);
+  const lobby = new Lobby({ base, log, pregameSeconds, maxMatches });
+  const matches = lobby.matches;
 
   const game = {
-    base, conns, matches, log,
+    base, conns, matches, lobby, log,
     getSandbox() {
       if (!sandbox || !matches.has(sandbox)) {
-        sandbox = new Match({ id: nextMatchId++, mode: 'sandbox', seed: base.seed, log });
-        // The sandbox starts on the flat edge of Brambleton, with houses to
+        sandbox = new Match({ id: lobby.nextId++, mode: 'sandbox', seed: base.seed, log });
+        // Practice starts on the flat edge of Brambleton, with houses to
         // harvest on one side and open, level ground to build on.
         const poi = base.pois.find((q) => q.name === 'Brambleton');
         for (let i = 0; i < 24; i++) {
@@ -103,8 +104,8 @@ export async function startServer({ port = 3500, host, log = console.log, seed, 
 
   function makeConn(ws, ip) {
     const conn = {
-      id: nextConnId++, ws, ip, player: null, match: null, ready: false, spectating: 0,
-      budget: 0, budgetAt: Date.now(), alive: true, name: 'Player',
+      id: nextConnId++, ws, ip, player: null, match: null, ready: false, spectating: 0, queued: null,
+      budget: 0, budgetAt: Date.now(), alive: true, name: 'Player', outfit: 0, glider: 0, pickaxe: 0,
       send(bytes) {
         if (ws.readyState !== WebSocket.OPEN) return;
         if (ws.bufferedAmount > BACKLOG_DROP) { ws.terminate(); return; }
@@ -115,43 +116,51 @@ export async function startServer({ port = 3500, host, log = console.log, seed, 
         ws.send(JSON.stringify(obj));
       },
       backlogged() { return ws.bufferedAmount > BACKLOG_SKIP; },
+      /** Puts this connection in control of a player in a match. */
+      attach(match, p) {
+        conn.detach();
+        p.conn = conn;
+        conn.player = p;
+        conn.match = match;
+        conn.known = null;
+        conn.spectating = 0;
+        match.conns.add(conn);
+        conn.sendJson(match.matchMessage(p));
+        if (match.phase) conn.sendJson(match.phaseMessage());
+        const storm = match.stormMessage();
+        if (storm) conn.sendJson(storm);
+        p.invDirty = true;
+        conn.ready = true;
+      },
+      /** Leaves the match (the player stays behind in a real match, as in the original). */
+      detach() {
+        const { match, player } = conn;
+        if (!match) return;
+        match.conns.delete(conn);
+        if (player) {
+          if (match.mode === 'sandbox') {
+            match.removePlayer(player);
+            for (const other of match.conns) other.sendJson({ t: 'left', id: player.id });
+          } else if (player.conn === conn) player.conn = null;
+        }
+        conn.player = null;
+        conn.match = null;
+        conn.ready = false;
+      },
     };
     return conn;
   }
 
   function joinSandbox(conn) {
-    leaveMatch(conn);
+    conn.detach();
+    lobby.cancel(conn);
     const match = game.getSandbox();
-    const p = match.addPlayer({ name: conn.name, bot: false });
+    const p = match.addPlayer({ name: conn.name, bot: false, outfit: conn.outfit, glider: conn.glider, pickaxe: conn.pickaxe });
     const spot = match.spawnPoints[p.id % match.spawnPoints.length];
     match.placeOnGround(p, spot.x, spot.z);
     match.practiceLoadout(p);
-    p.conn = conn;
-    conn.player = p;
-    conn.match = match;
-    match.conns.add(conn);
-    conn.sendJson({
-      t: 'match', id: match.id, mode: match.mode, seed: match.seed, hash: base.hash,
-      you: p.id, team: p.team, tick: match.tick, tickHz: TICK_HZ,
-      roster: [...match.players.values()].map((q) => ({ id: q.id, name: q.name, team: q.team, bot: q.bot, outfit: q.outfit })),
-    });
-    for (const other of match.conns) if (other !== conn) other.sendJson({ t: 'joined', player: { id: p.id, name: p.name, team: p.team, bot: false, outfit: p.outfit } });
-    const storm = match.stormMessage();
-    if (storm) conn.sendJson(storm);
-    conn.ready = true;
-  }
-
-  function leaveMatch(conn) {
-    const { match, player } = conn;
-    if (!match) return;
-    match.conns.delete(conn);
-    if (player && match.mode === 'sandbox') {
-      match.removePlayer(player);
-      for (const other of match.conns) other.sendJson({ t: 'left', id: player.id });
-    }
-    conn.player = null;
-    conn.match = null;
-    conn.ready = false;
+    conn.attach(match, p);
+    for (const other of match.conns) if (other !== conn) other.sendJson({ t: 'joined', player: match.rosterEntry(p) });
   }
 
   function handleJson(conn, msg) {
@@ -160,11 +169,21 @@ export async function startServer({ port = 3500, host, log = console.log, seed, 
         conn.name = String(msg.name || 'Player').replace(/[^\p{L}\p{N} _.-]/gu, '').trim().slice(0, 16) || 'Player';
         conn.sendJson({ t: 'welcome', conn: conn.id, hash: base.hash, seed: base.seed, tickHz: TICK_HZ });
         return;
+      case 'queue':
+        if (conn.match) return;
+        lobby.enqueue(conn, msg.mode);
+        return;
+      case 'cancel':
+        lobby.cancel(conn);
+        conn.sendJson({ t: 'lobby', reason: 'cancelled' });
+        return;
       case 'play':
-        if (msg.mode === 'sandbox') joinSandbox(conn);
+      case 'practice':
+        joinSandbox(conn);
         return;
       case 'leave':
-        leaveMatch(conn);
+        conn.detach();
+        conn.sendJson({ t: 'lobby', reason: 'left' });
         return;
       case 'dev':
         // Development helpers, never available in production.
@@ -202,7 +221,7 @@ export async function startServer({ port = 3500, host, log = console.log, seed, 
       }
     });
     ws.on('pong', () => { conn.alive = true; });
-    ws.on('close', () => { conns.delete(conn); leaveMatch(conn); });
+    ws.on('close', () => { conns.delete(conn); lobby.cancel(conn); conn.detach(); });
     ws.on('error', () => {});
   });
 
@@ -219,6 +238,7 @@ export async function startServer({ port = 3500, host, log = console.log, seed, 
       for (const match of matches) {
         try { match.step(); } catch (error) { log?.(`[match ${match.id}] tick failed: ${error.stack || error}`); }
       }
+      lobby.tick();
       next += TICK_MS;
       steps++;
     }
@@ -240,7 +260,7 @@ export async function startServer({ port = 3500, host, log = console.log, seed, 
       const actual = http.address().port;
       log?.(`Stormwall listening on http://localhost:${actual}`);
       resolve({
-        port: actual, game, conns, matches,
+        port: actual, game, conns, matches, lobby,
         close: () => new Promise((done) => {
           running = false;
           clearTimeout(timer);
@@ -256,7 +276,11 @@ export async function startServer({ port = 3500, host, log = console.log, seed, 
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
   // In production only Nginx should reach the game, so it listens on loopback.
   const host = process.env.HOST || (process.env.NODE_ENV === 'production' ? '127.0.0.1' : undefined);
-  const running = await startServer({ port: Number(process.env.PORT) || 3500, host });
+  const running = await startServer({
+    port: Number(process.env.PORT) || 3500, host,
+    pregameSeconds: Number(process.env.PREGAME_SECONDS) || undefined,
+    maxMatches: Number(process.env.MAX_MATCHES) || undefined,
+  });
   for (const signal of ['SIGTERM', 'SIGINT']) {
     process.on(signal, () => { running.close().then(() => process.exit(0)); });
   }

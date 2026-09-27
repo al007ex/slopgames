@@ -94,6 +94,10 @@ export function building(b, rng, o) {
   }
   const storeys = Math.min(floors, stairs.length + 1);
   record.floors = storeys;
+  // Every flight climbs +x: from just west of its cell to just inside the next.
+  record.stairs = stairs.slice(0, storeys - 1).map((st, s) => ({
+    lv: lv + s, x0: st.x * CELL - 0.8, z: (st.z + 0.5) * CELL, x1: (st.x + 1) * CELL + 1.2,
+  }));
 
   for (let s = 0; s < storeys; s++) {
     const L = lv + s;
@@ -107,6 +111,7 @@ export function building(b, rng, o) {
     }
     // Exterior walls, with a door on the front of the ground floor.
     const doorAt = { n: rng.int(0, w - 1), s: rng.int(0, w - 1), w: rng.int(0, d - 1), e: rng.int(0, d - 1) };
+    if (s === 0) record.door = doorPoints(cx, cz, w, d, front, doorAt[front], lv);
     const editFor = (side, k) => {
       if (s === 0 && side === front && k === doorAt[side]) return o.garage ? WALL_GARAGE : WALL_DOOR;
       if (s === 0 && o.backDoor && side === opposite(front) && k === doorAt[side]) return WALL_DOOR;
@@ -173,6 +178,17 @@ export function building(b, rng, o) {
 }
 
 const opposite = (side) => ({ n: 's', s: 'n', w: 'e', e: 'w' }[side]);
+
+/** Where to stand just outside and just inside a building's front door. */
+function doorPoints(cx, cz, w, d, side, k, lv) {
+  const y = lv * WALL_H + 0.1;
+  switch (side) {
+    case 'n': return { x: (cx + k + 0.5) * CELL, z: cz * CELL - 2, ix: (cx + k + 0.5) * CELL, iz: cz * CELL + 2, y };
+    case 's': return { x: (cx + k + 0.5) * CELL, z: (cz + d) * CELL + 2, ix: (cx + k + 0.5) * CELL, iz: (cz + d) * CELL - 2, y };
+    case 'w': return { x: cx * CELL - 2, z: (cz + k + 0.5) * CELL, ix: cx * CELL + 2, iz: (cz + k + 0.5) * CELL, y };
+    default: return { x: (cx + w) * CELL + 2, z: (cz + k + 0.5) * CELL, ix: (cx + w) * CELL - 2, iz: (cz + k + 0.5) * CELL, y };
+  }
+}
 
 /** A house on stilts: posts at ground level, the building a level up, and a ramp to the door. */
 export function stiltHouse(b, rng, o) {

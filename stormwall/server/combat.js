@@ -88,7 +88,7 @@ export const combatMethods = {
     let tx = target.x - f.ex, ty = target.y - f.ey, tz = target.z - f.ez;
     const tl = Math.sqrt(tx * tx + ty * ty + tz * tz) || 1;
     const base = { x: tx / tl, y: ty / tl, z: tz / tl };
-    if (def.projectile) { this.launch(p, item, shotDirection(base, spread, p.id, p.shots, 0, dir), f); return; }
+    if (def.projectile) { this.launchProjectile(p, item, shotDirection(base, spread, p.id, p.shots, 0, dir), f); return; }
     const pellets = def.pellets || 1;
     const perPellet = weaponDamage(item.key, item.rarity) / pellets;
     for (let k = 0; k < pellets; k++) {
@@ -230,7 +230,7 @@ export const combatMethods = {
 
   /* ------------------------------------------------------ projectiles */
 
-  launch(p, item, d, f) {
+  launchProjectile(p, item, d, f) {
     const def = WEAPONS[item.key];
     const pr = def.projectile;
     this.projectiles.push({
