@@ -113,3 +113,6 @@ button { font: inherit; cursor: pointer; }
 .progress { position: absolute; left: 50%; top: 60%; transform: translateX(-50%); width: 220px; height: 10px; background: rgba(0,0,0,0.55); border-radius: 5px; overflow: hidden; }
 .progress span { position: absolute; inset: 0; background: linear-gradient(90deg, #8fd3ff, #ffffff); transform-origin: left; }
 .progress b { position: absolute; left: 0; right: 0; top: 14px; text-align: center; font: 600 12px var(--body); text-shadow: 0 1px 2px #000; }
+.prompt { position: absolute; left: 50%; top: 62%; transform: translateX(-50%); font: 700 15px var(--body); background: rgba(0,0,0,0.5); padding: 6px 12px; border-radius: 6px; text-shadow: 0 1px 2px #000; }
+.prompt kbd { display: inline-block; min-width: 22px; padding: 1px 6px; margin-right: 6px; border-radius: 4px; background: #fff; color: #111; font: 800 13px var(--body); text-align: center; }
+.prompt .r0 { color: var(--common); } .prompt .r1 { color: var(--uncommon); } .prompt .r2 { color: var(--rare); } .prompt .r3 { color: var(--epic); } .prompt .r4 { color: var(--legendary); }

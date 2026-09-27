@@ -22,7 +22,8 @@ import { structureMethods } from './structures.js';
 import { harvestMethods } from './harvest.js';
 import { buildingMethods } from './building.js';
 import { combatMethods, EQUIP_TICKS } from './combat.js';
-import { A_SLOT, A_BUILD, A_MAT, A_PLACE, A_EDIT, A_RELOAD, PF_ADS, PF_BUILD, PF_FIRING, PF_USING, PF_HARVEST } from '../shared/protocol.js';
+import { lootMethods } from './loot.js';
+import { A_SLOT, A_BUILD, A_MAT, A_PLACE, A_EDIT, A_RELOAD, A_INTERACT, A_DROP, PF_ADS, PF_BUILD, PF_FIRING, PF_USING, PF_HARVEST } from '../shared/protocol.js';
 import { itemId } from '../shared/items.js';
 import { BTN_ADS } from '../shared/movement.js';
 
@@ -33,7 +34,7 @@ const MAX_QUEUE = 8;
 const STALL_TICKS = 6;        // no input for this long and gravity takes over
 
 export class Match {
-  constructor({ id = 1, mode = 'sandbox', seed = MAP_SEED, rngSeed = Date.now() >>> 0, log = null, trace = false, base = null } = {}) {
+  constructor({ id = 1, mode = 'sandbox', seed = MAP_SEED, rngSeed = Date.now() >>> 0, log = null, trace = false, base = null, loot = true } = {}) {
     this.id = id;
     this.mode = mode;
     this.seed = seed;
@@ -54,6 +55,8 @@ export class Match {
     this.rng = new Rng(rngSeed);
     this.projectiles = [];
     this.initReplication();
+    this.initLoot();
+    if (loot) this.spawnLoot();
   }
 
   addPlayer(opts) {
@@ -137,6 +140,8 @@ export class Match {
       case A_PLACE: if (p.pendingBuild.length < 4) p.pendingBuild.push(a); break;
       case A_EDIT: if (p.pendingEdits.length < 4) p.pendingEdits.push(a); break;
       case A_RELOAD: this.startReload(p); break;
+      case A_INTERACT: this.tryInteract(p, a); break;
+      case A_DROP: this.dropSlot(p, a.slot); break;
       default: this.onOtherAction?.(p, a);
     }
   }
@@ -168,7 +173,10 @@ export class Match {
         this.movePlayer(p, { mx: 0, mz: 0, yaw: p.yaw, pitch: p.pitch, buttons: 0, stall: true });
       }
     }
-    for (const p of this.players.values()) recordHistory(p, this.tick);
+    for (const p of this.players.values()) {
+      recordHistory(p, this.tick);
+      this.autoPickup(p);
+    }
   }
 
   movePlayer(p, input) {
@@ -365,7 +373,7 @@ export class Match {
   }
 }
 
-Object.assign(Match.prototype, replicationMethods, structureMethods, harvestMethods, buildingMethods, combatMethods);
+Object.assign(Match.prototype, replicationMethods, structureMethods, harvestMethods, buildingMethods, combatMethods, lootMethods);
 
 export function repCellOf(x, z) {
   const i = Math.floor(x / REP_CELL), j = Math.floor(z / REP_CELL);

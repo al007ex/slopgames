@@ -21,6 +21,12 @@ import { PICKAXES } from '#shared/cosmetics.js';
 import { BuildController } from './build.js';
 import { Loadout } from './inventory.js';
 import { ShotFx, handModel } from './render/weapons.js';
+import { LootRenderer } from './render/loot.js';
+import { readItems, readChests } from '#shared/records.js';
+import { B_ITEMS, B_CHESTS, A_INTERACT, A_DROP } from '#shared/protocol.js';
+import { EV_CHEST, EV_PICKUP } from '#shared/events.js';
+import { itemName } from '#shared/items.js';
+import { viewDir } from '#shared/aim.js';
 import { WEAPONS, itemKey, itemId } from '#shared/items.js';
 import { EV_SHOT, EV_EXPLOSION, EV_RELOAD } from '#shared/events.js';
 import { B_PROJECTILES } from '#shared/protocol.js';
@@ -60,8 +66,10 @@ class App {
     this.fillRenderers();
     this.fx = new Particles(this.gfx.scene);
     this.shotFx = new ShotFx(this.gfx.scene);
+    this.loot = new LootRenderer(this.gfx.scene, this.audio || null);
     this.weak = new WeakMarker(this.gfx.scene);
     this.audio = new Audio();
+    this.loot.audio = this.audio;
     this.mats = [0, 0, 0];
     this.swingAt = -1e9;
     this.game.onBlock(B_PIECES, readPieces, (list) => this.game.applyPieces(list, this.pieceHooks));
@@ -72,6 +80,8 @@ class App {
       for (let i = 0; i < n; i++) out.push({ id: r.u16(), kind: r.u8(), x: r.f32(), y: r.f32(), z: r.f32() });
       return out;
     }, (list) => this.shotFx.setProjectiles(list));
+    this.game.onBlock(B_ITEMS, readItems, (list) => this.loot.applyItems(list));
+    this.game.onBlock(B_CHESTS, readChests, (list) => this.loot.applyChests(list));
     this.pieceHooks = {
       added: (p) => { this.build.confirmSlot(p); this.pieceR.add(p); },
       changed: (p) => this.pieceR.update(p),
@@ -158,6 +168,11 @@ class App {
           break;
         }
         case EV_RELOAD: if (e.a !== meId) this.audio.reload(pos); else this.audio.reload(null); break;
+        case EV_CHEST:
+          this.audio.chestOpen(pos);
+          this.fx.burst(e.x, e.y + 0.6, e.z, { count: 18, color: 0xffd24a, speed: 3, size: 0.1, life: 0.9, gravity: 3 });
+          break;
+        case EV_PICKUP: if (e.a === meId) this.audio.pickup(); break;
         case EV_IMPACT:
           this.fx.burst(e.x, e.y, e.z, { count: 5, color: 0x8a7a5a, speed: 2, size: 0.08, life: 0.4 });
           this.audio.hit(pos, 3, false);
@@ -182,7 +197,7 @@ class App {
         if (msg.hash !== this.base.hash) console.error(`World mismatch: server ${msg.hash}, client ${this.base.hash}`);
         break;
       case 'match':
-        if (this.game.freshWorld(msg.id)) this.fillRenderers();
+        if (this.game.freshWorld(msg.id)) { this.fillRenderers(); this.loot.clear(); }
         this.game.start(msg);
         this.state = 'match';
         $('menu').hidden = true;
@@ -310,6 +325,8 @@ class App {
     $('scope').hidden = !(scope && this.cam.adsBlend > 0.8);
     this.loadout.frame(dt);
     this.shotFx.update(dt);
+    this.loot.frame(dt, this.gfx.camera.position, pos);
+    this.updatePrompt(pos);
 
     this.drawPlayers(dt, pos);
     this.pieceR.frame(game.renderTick);
@@ -370,6 +387,12 @@ class App {
     for (const action of this.input.takePresses()) {
       if (this.build.onPress(action)) continue;
       if (this.loadout.onPress(action)) continue;
+      if (action === 'interact' && this.interactTarget) {
+        const t = this.interactTarget;
+        this.queueAction({ type: A_INTERACT, kind: t.kind === 'chest' ? 2 : 1, id: t.id });
+        continue;
+      }
+      if (action === 'drop' && this.loadout.held > 0) { this.queueAction({ type: A_DROP, slot: this.loadout.held }); continue; }
       this.onPress?.(action);
     }
     for (const button of this.input.takeClicks()) {
@@ -377,6 +400,20 @@ class App {
       if (button === 'left') this.loadout.clicked = true;
     }
     if (wheel && this.build.mode === 'weapon') this.loadout.wheel(wheel);
+  }
+
+  /** "E — Pick up …" for whatever is in reach and nearest the crosshair. */
+  updatePrompt(pos) {
+    const t = this.game.me.move.mode === 0 ? this.loot.target(pos, viewDir(this.yaw, this.pitch, {})) : null;
+    this.interactTarget = t;
+    const el = $('prompt');
+    if (!t) { el.hidden = true; return; }
+    el.hidden = false;
+    if (t.kind === 'chest') el.innerHTML = '<kbd>E</kbd> Open chest';
+    else {
+      const it = { key: t.o.key, rarity: t.rec.rarity };
+      el.innerHTML = `<kbd>E</kbd> Pick up <b class="r${t.rec.rarity}">${esc(itemName(it))}</b>${t.rec.count > 1 && !WEAPONS[t.o.key] ? ` ×${t.rec.count}` : ''}`;
+    }
   }
 
   addFeed(msg) {

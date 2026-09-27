@@ -125,6 +125,50 @@ export class Audio {
     this.tone(pos, { freq: 70, to: 28, gain: 1.0, dur: 0.9, range: 250 });
   }
 
+  /**
+   * A chest's hum: two detuned tones and a slow shimmer, looping, positioned
+   * at the chest and not muffled by walls. Returns a handle with stop().
+   */
+  hum(pos) {
+    if (!this.ctx) return null;
+    const t = this.ctx.currentTime;
+    const out = this.out({ x: pos.x, y: pos.y + 0.5, z: pos.z }, 0.0, 16);
+    out.gain.setValueAtTime(0.0001, t);
+    out.gain.exponentialRampToValueAtTime(0.35, t + 0.6);
+    const oscs = [196, 293.7, 392.9].map((f, i) => {
+      const o = this.ctx.createOscillator();
+      o.type = i === 2 ? 'triangle' : 'sine';
+      o.frequency.value = f;
+      const g = this.ctx.createGain();
+      g.gain.value = i === 2 ? 0.15 : 0.4;
+      o.connect(g).connect(out);
+      o.start(t);
+      return o;
+    });
+    const lfo = this.ctx.createOscillator();
+    lfo.frequency.value = 3.2;
+    const depth = this.ctx.createGain();
+    depth.gain.value = 0.12;
+    lfo.connect(depth).connect(out.gain);
+    lfo.start(t);
+    return {
+      stop: () => {
+        const now = this.ctx.currentTime;
+        out.gain.cancelScheduledValues(now);
+        out.gain.setValueAtTime(out.gain.value, now);
+        out.gain.exponentialRampToValueAtTime(0.0001, now + 0.3);
+        for (const o of [...oscs, lfo]) o.stop(now + 0.35);
+      },
+    };
+  }
+
+  chestOpen(pos) {
+    this.noiseBurst(pos, { freq: 500, q: 3, gain: 0.4, dur: 0.3, range: 40 });
+    [523, 659, 784, 1047].forEach((f, i) => setTimeout(() => this.tone(pos, { freq: f, gain: 0.18, dur: 0.35, type: 'triangle', range: 40 }), i * 70));
+  }
+
+  pickup() { this.tone(null, { freq: 700, to: 1100, gain: 0.12, dur: 0.1, type: 'triangle' }); }
+
   hitmark(head, shield) { this.tone(null, { freq: head ? 1500 : shield ? 900 : 1100, to: head ? 1900 : undefined, gain: 0.12, dur: 0.07, type: head ? 'triangle' : 'sine' }); }
   click() { this.tone(null, { freq: 2200, gain: 0.08, dur: 0.03, type: 'square' }); }
   reload(pos) { this.noiseBurst(pos, { freq: 3000, q: 4, gain: 0.25, dur: 0.05, range: 20 }); setTimeout(() => this.noiseBurst(pos, { freq: 2200, q: 4, gain: 0.25, dur: 0.06, range: 20 }), 350); }
