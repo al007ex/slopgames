@@ -168,7 +168,7 @@ export const flowMethods = {
 
   aliveTeams() {
     const teams = new Set();
-    for (const p of this.players.values()) if (p.alive && !this.teamsOut.has(p.team)) teams.add(p.team);
+    for (const p of this.players.values()) if (p.alive && !p.dbno && !this.teamsOut.has(p.team)) teams.add(p.team);
     return teams;
   },
 

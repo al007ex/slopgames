@@ -30,6 +30,7 @@ import { viewDir } from '#shared/aim.js';
 import { StormView } from './storm.js';
 import { MapView } from './map.js';
 import { MatchFlow } from './flow.js';
+import { TeamView } from './team.js';
 import { MODE_BUS, MODE_DEAD } from '#shared/movement.js';
 import { WEAPONS, itemKey, itemId } from '#shared/items.js';
 import { EV_SHOT, EV_EXPLOSION, EV_RELOAD } from '#shared/events.js';
@@ -99,6 +100,8 @@ class App {
     this.storm = new StormView(this);
     this.map = new MapView(this, this.terrain.colors, this.base.terrain, this.base.pois);
     this.flow = new MatchFlow(this);
+    this.team = new TeamView(this);
+    this.teammateMarks = () => this.team.marks();
     this.mode = localStorage.getItem('sw.mode') || 'solo';
     window.addEventListener('pointerdown', () => this.audio.unlock());
     window.addEventListener('keydown', () => this.audio.unlock());
@@ -244,6 +247,7 @@ class App {
       case 'match':
         if (this.game.freshWorld(msg.id)) { this.fillRenderers(); this.loot.clear(); this.storm.clear(); }
         this.flow.reset();
+        this.team.reset();
         this.killTally = new Map();
         this.damageDealt = 0;
         this.showQueue(false);
@@ -275,6 +279,11 @@ class App {
       case 'alive': this.flow.onAlive(msg); break;
       case 'results': this.flow.onResults(msg); break;
       case 'roster': for (const p of msg.players) this.game.roster.set(p.id, p); break;
+      case 'team': this.team.onTeam(msg); break;
+      case 'ping': this.team.onPing(msg); break;
+      case 'reviving': this.team.onReviving(msg); break;
+      case 'knocked': this.toast("YOU'RE DOWN — crawl to your team", 2500); $('vignette').classList.add('show'); break;
+      case 'revived': this.toast('BACK ON YOUR FEET', 1500); this.team.revive = null; break;
       case 'queue': this.showQueue(true, `Waiting for a free server slot — ${msg.position} in line`); break;
       case 'lobby': this.toLobby(); break;
       case 'note': this.hudNote(msg.text); break;
@@ -391,6 +400,7 @@ class App {
     this.loot.frame(dt, this.gfx.camera.position, pos);
     this.updatePrompt(pos);
     this.updateScoreboard();
+    this.team.frame(dt);
     this.storm.frame(dt, pos);
     this.map.frame(pos, this.yaw, this.storm.state, this.teammateMarks?.() || []);
 
@@ -453,6 +463,8 @@ class App {
     for (const action of this.input.takePresses()) {
       if (this.build.onPress(action)) continue;
       if (this.loadout.onPress(action)) continue;
+      if (action === 'ping') { this.team.ping(); continue; }
+      if (action === 'interact' && this.reviveTargetState) { this.team.startRevive(this.reviveTargetState.id); continue; }
       if (action === 'interact' && this.interactTarget) {
         const t = this.interactTarget;
         this.queueAction({ type: A_INTERACT, kind: t.kind === 'chest' ? 2 : 1, id: t.id });
@@ -472,9 +484,17 @@ class App {
 
   /** "E — Pick up …" for whatever is in reach and nearest the crosshair. */
   updatePrompt(pos) {
-    const t = this.game.me.move.mode === 0 ? this.loot.target(pos, viewDir(this.yaw, this.pitch, {})) : null;
+    const walking = this.game.me.move.mode === 0;
+    const mate = walking ? this.team.reviveTarget(pos) : null;
+    this.reviveTargetState = mate;
+    const t = walking && !mate ? this.loot.target(pos, viewDir(this.yaw, this.pitch, {})) : null;
     this.interactTarget = t;
     const el = $('prompt');
+    if (mate) {
+      el.hidden = !!this.team.revive;
+      el.innerHTML = `<kbd>E</kbd> Hold to revive <b>${esc(this.game.roster.get(mate.id)?.name || '')}</b>`;
+      return;
+    }
     if (!t) { el.hidden = true; return; }
     el.hidden = false;
     if (t.kind === 'chest') el.innerHTML = '<kbd>E</kbd> Open chest';
@@ -585,8 +605,12 @@ class App {
 
   updateHud(pos) {
     const me = this.game.me;
-    $('hp-fill').style.transform = `scaleX(${Math.max(0, me.hp) / 100})`;
-    $('hp-num').textContent = Math.ceil(me.hp);
+    const down = me.move.mode === MODE_DBNO_LOCAL;
+    const mine = this.team.members.find((m) => m.id === me.id);
+    const hp = down && mine ? mine.dbno : me.hp;
+    $('hp-fill').style.transform = `scaleX(${Math.max(0, hp) / 100})`;
+    $('hp-fill').parentElement.classList.toggle('down', down);
+    $('hp-num').textContent = Math.ceil(hp);
     $('shield-fill').style.transform = `scaleX(${Math.max(0, me.shield) / 100})`;
     $('shield-num').textContent = Math.ceil(me.shield);
     if (!this.debugAt || performance.now() - this.debugAt > 250) {
@@ -597,6 +621,7 @@ class App {
   }
 }
 
+const MODE_DBNO_LOCAL = 4;
 const esc = (t) => String(t).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 
 /** 0‥1 through a pickaxe swing that started `ms` ago, 0 when not swinging. */

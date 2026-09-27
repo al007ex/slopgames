@@ -43,6 +43,7 @@ export const combatMethods = {
       else p.bloom = 0;
       this.progressReload(p);
       this.progressUse(p);
+      if (p.reviving) { p.fireLatch = (p.buttons & BTN_FIRE) !== 0; continue; }
       if (p.held === 0) this.swingPickaxe(p);
       else if (key && isWeapon(key)) this.tryFire(p, item);
       else if (key && isHeal(key)) this.tryUse(p, item);
@@ -52,7 +53,7 @@ export const combatMethods = {
   },
 
   canAct(p) {
-    return p.alive && !p.dbno && !p.buildMode && p.move.mode === MODE_WALK && this.tick >= (p.equipUntil || 0);
+    return p.alive && !p.dbno && !p.reviving && !p.buildMode && p.move.mode === MODE_WALK && this.tick >= (p.equipUntil || 0);
   },
 
   tryFire(p, item) {

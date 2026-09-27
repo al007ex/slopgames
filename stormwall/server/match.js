@@ -26,7 +26,8 @@ import { lootMethods } from './loot.js';
 import { stormMethods } from './storm.js';
 import { flowMethods, TEAM_SIZES } from './flow.js';
 import { botMethods } from './bots.js';
-import { A_SLOT, A_BUILD, A_MAT, A_PLACE, A_EDIT, A_RELOAD, A_INTERACT, A_DROP, A_JUMP, PF_ADS, PF_BUILD, PF_FIRING, PF_USING, PF_HARVEST } from '../shared/protocol.js';
+import { teamMethods } from './teams.js';
+import { A_SLOT, A_BUILD, A_MAT, A_PLACE, A_EDIT, A_RELOAD, A_INTERACT, A_DROP, A_JUMP, A_PING, PF_ADS, PF_BUILD, PF_FIRING, PF_USING, PF_HARVEST } from '../shared/protocol.js';
 import { itemId } from '../shared/items.js';
 import { BTN_ADS } from '../shared/movement.js';
 
@@ -150,6 +151,7 @@ export class Match {
       case A_INTERACT: this.tryInteract(p, a); break;
       case A_DROP: this.dropSlot(p, a.slot); break;
       case A_JUMP: if (p.move.mode === MODE_BUS) p.wantsJump = true; break;
+      case A_PING: this.ping(p, a); break;
       default: this.onOtherAction?.(p, a);
     }
   }
@@ -220,6 +222,7 @@ export class Match {
       if (d.structure) this.applyStructureDamage(d);
       else this.applyDamage(d);
     }
+    this.stageTeams();
   }
 
   applyDamage(d) {
@@ -227,6 +230,17 @@ export class Match {
     if (!p.alive) return 0;
     if (d.source && this.friendly(d.source, p)) return 0;     // friendly fire is off
     if (this.noDamage && d.kind !== 'storm') return 0;          // the pre-game island
+    if (p.dbno) {
+      // Knocked: damage comes off knocked health, and zero finishes them.
+      const dealt = Math.min(d.amount, p.dbnoHp);
+      p.dbnoHp -= d.amount;
+      if (d.source && d.source !== p) {
+        d.source.damageDealt = (d.source.damageDealt || 0) + dealt;
+        d.source.conn?.sendJson({ t: 'hit', dmg: Math.round(d.amount), head: !!d.head, shield: false, x: d.point?.x, y: d.point?.y, z: d.point?.z, kill: p.dbnoHp <= 0, knocked: true });
+      }
+      if (p.dbnoHp <= 0) this.eliminate(p, { ...d, source: d.source || p.knockedBy });
+      return dealt;
+    }
     let amount = d.amount;
     const shieldBefore = p.shield;
     // What this hit actually takes off: overkill does not count as damage dealt.
@@ -245,11 +259,17 @@ export class Match {
       src.damageDealt = (src.damageDealt || 0) + effective;
       src.conn?.sendJson({ t: 'hit', dmg: Math.round(d.amount), head: !!d.head, shield: shieldBefore > 0, x: d.point?.x, y: d.point?.y, z: d.point?.z, kill: p.hp <= 0 });
     }
-    if (p.hp <= 0) this.eliminate(p, d);
+    if (p.hp <= 0) {
+      if (this.canKnock(p)) this.knock(p, d);
+      else this.eliminate(p, d);
+    }
     return d.amount;
   }
 
   eliminate(p, d = {}) {
+    if (!p.alive) return;
+    p.dbno = false;
+    p.reviving = null;
     const killer = d.source && d.source !== p ? d.source : null;
     if (killer) killer.kills++;
     p.eliminatedBy = killer ? killer.id : 0;
@@ -418,7 +438,7 @@ export class Match {
   }
 }
 
-Object.assign(Match.prototype, replicationMethods, structureMethods, harvestMethods, buildingMethods, combatMethods, lootMethods, stormMethods, flowMethods, botMethods);
+Object.assign(Match.prototype, replicationMethods, structureMethods, harvestMethods, buildingMethods, combatMethods, lootMethods, stormMethods, flowMethods, botMethods, teamMethods);
 
 export function repCellOf(x, z) {
   const i = Math.floor(x / REP_CELL), j = Math.floor(z / REP_CELL);

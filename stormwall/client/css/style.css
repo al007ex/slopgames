@@ -160,3 +160,14 @@ button { font: inherit; cursor: pointer; }
 .scoreboard .row b { font: italic 900 16px var(--display); }
 .scoreboard .me { color: var(--gold); }
 .scoreboard small { display: block; margin: 12px 0 4px; color: var(--muted); letter-spacing: 1px; font-size: 11px; }
+.team { position: absolute; left: 14px; top: 16px; display: grid; gap: 6px; font: 600 12px var(--body); }
+.mate { display: grid; grid-template-columns: 10px 1fr; column-gap: 6px; row-gap: 2px; align-items: center; background: rgba(0,0,0,0.45); padding: 5px 8px; border-radius: 6px; min-width: 150px; }
+.mate i { width: 10px; height: 10px; border-radius: 50%; grid-row: span 3; }
+.mate .mbar { grid-column: 2; height: 4px; background: rgba(255,255,255,0.12); border-radius: 2px; overflow: hidden; }
+.mate .mbar b { display: block; height: 100%; }
+.mate .mbar .hp { background: var(--hp); } .mate .mbar .sh { background: var(--shield); } .mate .mbar .dn { background: #ff5a5a; }
+.mate.down span::after { content: ' — DOWN'; color: #ff7070; }
+.mate.out { opacity: 0.45; } .mate.out span { text-decoration: line-through; }
+.tag { position: absolute; left: 0; top: 0; font: 700 12px var(--body); text-shadow: 0 1px 2px #000, 0 0 4px #000; white-space: nowrap; pointer-events: none; }
+.revive { top: 55%; }
+.bar.health.down span { background: linear-gradient(180deg, #ff8a8a, #c83030); }

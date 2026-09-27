@@ -7,11 +7,11 @@
 // pickaxe straight through it.
 
 import { WEAPONS, HEALS, isWeapon, isHeal, isAmmo, isMaterial } from '../shared/items.js';
-import { MODE_WALK, MODE_SKYDIVE, MODE_GLIDE, MODE_BUS, MODE_DEAD, MODE_DBNO, BTN_FIRE, BTN_JUMP, BTN_SPRINT, BTN_ADS } from '../shared/movement.js';
+import { MODE_WALK, MODE_SKYDIVE, MODE_GLIDE, MODE_BUS, MODE_DEAD, MODE_DBNO, BTN_FIRE, BTN_JUMP, BTN_SPRINT, BTN_ADS, BTN_USE } from '../shared/movement.js';
 import { buildTarget } from '../shared/build.js';
 import { WALL, RAMP } from '../shared/pieces.js';
 import { A_SLOT, A_INTERACT, A_PLACE, A_RELOAD, A_MAT } from '../shared/protocol.js';
-import { INTERACT_ITEM, INTERACT_CHEST } from './loot.js';
+import { INTERACT_ITEM, INTERACT_CHEST, INTERACT_REVIVE } from './loot.js';
 import { outsideStorm } from '../shared/storm.js';
 import { OUTFITS, GLIDERS, PICKAXES } from '../shared/cosmetics.js';
 import { OWNER_PROP } from '../shared/collision.js';
@@ -65,9 +65,10 @@ export const botMethods = {
     const ai = p.ai, m = p.move;
     if (m.mode === MODE_BUS) { this.botBus(p); return; }
     if (m.mode === MODE_SKYDIVE || m.mode === MODE_GLIDE) return;
-    if (m.mode === MODE_DBNO) { ai.state = 'crawl'; this.botCrawl(p); return; }
+    if (m.mode === MODE_DBNO) { ai.state = 'crawl'; this.botCrawl(p); this.botSteer(p); return; }
     if (m.mode !== MODE_WALK) return;
 
+    if (ai.landed === undefined) ai.landed = this.tick;
     this.botSee(p);
     this.botStuck(p);
     const storm = this.stormNow?.();
@@ -76,7 +77,15 @@ export const botMethods = {
     const d = enemy ? Math.hypot(enemy.move.x - m.x, enemy.move.z - m.z) : Infinity;
 
     const armed = this.botArmed(p);
-    if (enemy && (!urgent || d < 20) && armed) ai.state = 'fight';
+    const downed = this.teamSize > 1 ? this.botDownedMate(p) : null;
+    if (downed && (!enemy || d > 35) && this.tick - ai.enemySeen > 2 * TICK_HZ) {
+      ai.state = 'revive';
+      ai.goal = { x: downed.move.x, z: downed.move.z };
+      ai.reviveTarget = downed;
+      if (Math.hypot(downed.move.x - m.x, downed.move.z - m.z) < 2.3 && !p.reviving) this.onAction(p, { type: A_INTERACT, kind: INTERACT_REVIVE, id: downed.id });
+    } else if (enemy && (!urgent || d < 20) && armed) ai.state = 'fight';
+    // Pickaxe fights are a last resort: when cornered, or long after landing with nothing left to shoot.
+    else if (enemy && !armed && d < 10 && (this.tick - (p.lastHurtTick || -1e9) < TICK_HZ || this.tick - ai.landed > 45 * TICK_HZ)) { ai.state = 'brawl'; ai.goal = null; }
     else if (enemy && !armed && d < 45 && this.botArmed(enemy)) {
       // Caught with no gun: run the other way, towards loot if there is any.
       ai.state = 'flee';
@@ -102,7 +111,11 @@ export const botMethods = {
   botBus(p) {
     const ai = p.ai;
     if (!this.route) return;
-    if (!ai.drop) ai.drop = this.botPickDrop(p);
+    // Squads drop together: follow the first teammate who picked a spot, and
+    // jump when they jump.
+    const lead = this.teamSize > 1 ? [...this.players.values()].find((q) => q !== p && q.team === p.team && q.ai?.drop) : null;
+    if (!ai.drop) ai.drop = lead ? { x: lead.ai.drop.x + this.rng.range(-15, 15), z: lead.ai.drop.z + this.rng.range(-15, 15) } : this.botPickDrop(p);
+    if (lead && lead.jumpedAt) { p.wantsJump = true; return; }
     const bus = this.busPosition();
     const d = Math.hypot(ai.drop.x - bus.x, ai.drop.z - bus.z);
     const r = this.route;
@@ -156,6 +169,16 @@ export const botMethods = {
       ai.enemy = best;
       ai.enemySeen = this.tick;
     } else if (ai.enemy && (this.tick - ai.enemySeen > 4 * TICK_HZ || !ai.enemy.alive)) ai.enemy = null;
+  },
+
+  botDownedMate(p) {
+    let best = null, bd = 70;
+    for (const q of this.players.values()) {
+      if (q === p || q.team !== p.team || !q.alive || !q.dbno) continue;
+      const d = Math.hypot(q.move.x - p.move.x, q.move.z - p.move.z);
+      if (d < bd) { bd = d; best = q; }
+    }
+    return best;
   },
 
   botArmed(p) { return p.inv.some((s) => s && isWeapon(s.key) && (s.mag > 0 || (p.ammo[WEAPONS[s.key].ammo] || 0) > 0)); },
@@ -236,11 +259,24 @@ export const botMethods = {
   botWantsLoot(p) {
     const weapons = p.inv.filter((s) => s && isWeapon(s.key));
     const heals = p.inv.some((s) => s && isHeal(s.key));
-    return weapons.length < 2 || !heals || p.inv.some((s) => !s) || weapons.some((w) => w.rarity < 2);
+    return weapons.length < 2 || !heals || p.inv.some((s) => !s) || weapons.some((w) => w.rarity < 2) || this.botAmmo(p) < 40;
+  },
+
+  /** Rounds available across every gun carried (in magazines and in reserve). */
+  botAmmo(p) {
+    let n = 0;
+    const counted = new Set();
+    for (const s of p.inv) {
+      if (!s || !isWeapon(s.key)) continue;
+      n += s.mag;
+      const type = WEAPONS[s.key].ammo;
+      if (!counted.has(type)) { counted.add(type); n += p.ammo[type] || 0; }
+    }
+    return n;
   },
 
   botUseful(p, it) {
-    if (isAmmo(it.key)) return p.inv.some((s) => s && isWeapon(s.key) && WEAPONS[s.key].ammo === it.key) && (p.ammo[it.key] || 0) < 120;
+    if (isAmmo(it.key)) return p.inv.some((s) => s && isWeapon(s.key) && WEAPONS[s.key].ammo === it.key) && (p.ammo[it.key] || 0) < 150;
     if (isMaterial(it.key)) return p.mats[['wood', 'stone', 'metal'].indexOf(it.key)] < 300;
     const free = p.inv.some((s) => !s);
     if (isHeal(it.key)) return free || p.inv.some((s) => s && s.key === it.key && s.count < HEALS[it.key].stack);
@@ -454,7 +490,7 @@ export const botMethods = {
     ai.stuckCheck = this.tick + TICK_HZ;
     const moved = Math.hypot(m.x - ai.lastPos.x, m.z - ai.lastPos.z);
     ai.lastPos.x = m.x; ai.lastPos.z = m.z;
-    const moving = ['loot', 'rotate', 'roam', 'harvest', 'search', 'flee'].includes(ai.state);
+    const moving = ['loot', 'rotate', 'roam', 'harvest', 'search', 'flee', 'revive', 'crawl', 'brawl'].includes(ai.state);
     if (!moving || moved > 1.2) { ai.stuck = 0; return; }
     ai.stuck++;
     // Stuck on the way to a building for a while: it is not reachable from here.
@@ -500,11 +536,12 @@ export const botMethods = {
         inp.pitch = Math.atan2(dy, d) + ai.errPitch;
         const item = p.held > 0 ? p.inv[p.held - 1] : null;
         const def = item && WEAPONS[item.key];
-        const pref = !def ? 3 : def.pellets ? 5 : def.cls === 'sniper' ? 80 : 22;
+        const pref = !def ? 3 : def.pellets ? 5 : def.cls === 'sniper' ? 80 : def.cls === 'smg' || def.cls === 'pistol' ? 15 : 25;
         inp.mz = d > pref * 1.4 ? 1 : d < pref * 0.5 ? -1 : 0;
         inp.mx = ai.strafe;
         if (inp.mz > 0 && d > 30) inp.buttons |= sprint;
-        if (this.tick - ai.enemySeen < 12 && def && item.mag > 0 && Math.abs(ai.errYaw) < 0.12) {
+        const range = !def ? 0 : def.pellets ? 16 : def.cls === 'sniper' || def.cls === 'scoped' ? 250 : def.cls === 'smg' || def.cls === 'pistol' ? 40 : def.projectile ? 70 : 75;
+        if (this.tick - ai.enemySeen < 12 && def && item.mag > 0 && d < range && Math.abs(ai.errYaw) < 0.12) {
           if (def.auto) inp.buttons |= BTN_FIRE;
           else if (++ai.semi % 3 === 0) inp.buttons |= BTN_FIRE;
           if (def.scope && d > 40) inp.buttons |= BTN_ADS;
@@ -512,6 +549,22 @@ export const botMethods = {
         if (this.rng.chance(0.012)) inp.buttons |= BTN_JUMP;
         return;
       }
+      case 'brawl': {
+        // Nothing to shoot with: close in and swing.
+        const e = ai.enemy;
+        if (!e || !e.alive) break;
+        const dx = e.move.x - m.x, dz = e.move.z - m.z, d = Math.hypot(dx, dz);
+        if (p.held !== 0) this.onAction(p, { type: A_SLOT, slot: 0 });
+        inp.yaw = Math.atan2(-dx, -dz) + 0.1;
+        inp.pitch = Math.atan2(e.move.y + 1 - (m.y + 1.6), d);
+        inp.mz = d > 1.6 ? 1 : 0;
+        inp.mx = ai.strafe * 0.5;
+        if (d < 2.8) inp.buttons |= BTN_FIRE;
+        return;
+      }
+      case 'revive':
+        if (p.reviving) { inp.buttons |= BTN_USE; inp.yaw = p.yaw; return; }
+        break;
       case 'heal':
         if (ai.healSlot >= 0 && p.held === ai.healSlot + 1 && !p.using && this.tick >= p.equipUntil) inp.buttons |= BTN_FIRE;
         inp.yaw = p.yaw;
