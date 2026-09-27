@@ -1,0 +1,53 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<meta name="theme-color" content="#101624" />
+<title>STORMWALL — build, fight, outlast the storm</title>
+<meta name="description" content="A 100-player build-and-shoot battle royale in the browser. Drop from the blimp, harvest, build, loot and be the last one standing as the storm closes in." />
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect width='32' height='32' rx='7' fill='%23101624'/><path d='M6 26V12l10-6 10 6v14h-6v-8h-8v8z' fill='%23ffcf3f'/><circle cx='16' cy='16' r='13' fill='none' stroke='%239b6cff' stroke-width='2.5'/></svg>" />
+<link rel="stylesheet" href="./css/style.css" />
+<script type="importmap">
+{ "imports": { "three": "./vendor/three.module.js", "#shared/": "./shared/" } }
+</script>
+</head>
+<body>
+<canvas id="view"></canvas>
+
+<div id="hud" hidden>
+  <div id="crosshair" class="crosshair"><i></i><i></i><i></i><i></i><b></b></div>
+  <div id="hitmarker" class="hitmarker"></div>
+  <div class="vitals">
+    <div class="bar shield"><span id="shield-fill"></span><b id="shield-num">0</b></div>
+    <div class="bar health"><span id="hp-fill"></span><b id="hp-num">100</b></div>
+  </div>
+  <div id="debug" class="debug"></div>
+  <div id="toast" class="toast"></div>
+</div>
+
+<section id="loading" class="screen">
+  <div class="card">
+    <h1 class="logo">STORM<span>WALL</span></h1>
+    <p id="loading-text">Raising the island…</p>
+    <i class="spinner"></i>
+  </div>
+</section>
+
+<section id="menu" class="screen" hidden>
+  <div class="card">
+    <h1 class="logo">STORM<span>WALL</span></h1>
+    <p class="tag">Drop in. Build up. Outlast the storm.</p>
+    <input id="name" type="text" maxlength="16" placeholder="Your name" autocomplete="off" spellcheck="false" />
+    <button id="play" class="play" type="button">Play</button>
+    <p class="hint">WASD move · Shift sprint · Space jump · C crouch · mouse aim</p>
+  </div>
+</section>
+
+<section id="click-to-play" class="screen clear" hidden>
+  <div class="card small"><p>Click to take control</p><p class="hint">Esc releases the mouse</p></div>
+</section>
+
+<script type="module" src="./js/main.js"></script>
+</body>
+</html>
