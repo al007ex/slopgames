@@ -168,7 +168,7 @@ button { font: inherit; cursor: pointer; }
 .mate .mbar .hp { background: var(--hp); } .mate .mbar .sh { background: var(--shield); } .mate .mbar .dn { background: #ff5a5a; }
 .mate.down span::after { content: ' — DOWN'; color: #ff7070; }
 .mate.out { opacity: 0.45; } .mate.out span { text-decoration: line-through; }
-.tag { position: absolute; left: 0; top: 0; font: 700 12px var(--body); text-shadow: 0 1px 2px #000, 0 0 4px #000; white-space: nowrap; pointer-events: none; }
+.mate-tag { position: absolute; left: 0; top: 0; font: 700 12px var(--body); text-shadow: 0 1px 2px #000, 0 0 4px #000; white-space: nowrap; pointer-events: none; }
 .revive { top: 55%; }
 .bar.health.down span { background: linear-gradient(180deg, #ff8a8a, #c83030); }
 .lobby-shell { width: min(760px, 94vw); max-height: 92vh; overflow: auto; background: var(--panel); border: 1px solid var(--line); border-radius: 18px; box-shadow: 0 24px 60px rgba(0,0,0,0.45); backdrop-filter: blur(8px); padding: 18px 22px 22px; }

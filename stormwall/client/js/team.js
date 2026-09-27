@@ -104,7 +104,7 @@ export class TeamView {
       if (!(s.flags & PF_TEAM)) continue;
       seen.add(s.id);
       let el = this.tags.get(s.id);
-      if (!el) { el = document.createElement('div'); el.className = 'tag'; $('hud').appendChild(el); this.tags.set(s.id, el); }
+      if (!el) { el = document.createElement('div'); el.className = 'mate-tag'; $('hud').appendChild(el); this.tags.set(s.id, el); }
       v.set(s.x, s.y + 2.25, s.z).project(cam);
       const onScreen = v.z < 1 && Math.abs(v.x) < 1.1 && Math.abs(v.y) < 1.1;
       el.hidden = !onScreen;
