@@ -1,0 +1,98 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no" />
+  <title>Mootopia</title>
+  <meta name="description" content="Gather, build and fight in a cosy top-down .io world. Chop trees, mine gold, age up, build a base and raid your neighbours." />
+  <link rel="icon" type="image/png" href="img/resources/food_ico.png" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Hammersmith+One&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="css/style.css" />
+  <script type="importmap">{ "imports": { "#shared/": "./shared/" } }</script>
+</head>
+<body>
+  <canvas id="game"></canvas>
+
+  <!-- MENU -->
+  <div id="menu" class="screen">
+    <div class="menu-inner">
+      <h1 id="logo">MOOTOPIA</h1>
+      <div class="card">
+        <input id="name" type="text" maxlength="15" placeholder="Enter Name" autocomplete="off" spellcheck="false" />
+        <div id="skins" aria-label="Pick a colour"></div>
+        <button id="enter" type="button">Enter Game</button>
+        <div id="status" class="status">Connecting…</div>
+      </div>
+      <div class="card guide">
+        <div class="guide-title">How to play</div>
+        <ul>
+          <li><kbd>WASD</kbd> move &nbsp;·&nbsp; <b>mouse</b> aim &nbsp;·&nbsp; <b>click</b> hit or place</li>
+          <li><kbd>1</kbd>–<kbd>9</kbd> pick a tool or item &nbsp;·&nbsp; <kbd>Q</kbd> food &nbsp;·&nbsp; <kbd>E</kbd> auto-hit</li>
+          <li><kbd>Enter</kbd> chat &nbsp;·&nbsp; <kbd>X</kbd> lock aim &nbsp;·&nbsp; <kbd>R</kbd> ping your clan</li>
+          <li>Gather wood, food, stone and gold to age up and unlock better gear.</li>
+        </ul>
+      </div>
+    </div>
+  </div>
+
+  <!-- DEATH -->
+  <div id="died" class="screen" hidden><div class="died-text">YOU DIED</div></div>
+
+  <!-- HUD -->
+  <div id="hud" hidden>
+    <div id="top-left">
+      <button id="shop-btn" class="round-btn" type="button" title="Hat shop"><span class="icon-hat"></span></button>
+      <button id="clan-btn" class="round-btn" type="button" title="Clans"><span class="icon-flag"></span></button>
+      <div id="kills" class="pill"><img src="img/icons/skull.png" alt="" /><span>0</span></div>
+    </div>
+
+    <div id="upgrades" hidden>
+      <div id="upgrade-label">Select an upgrade</div>
+      <div id="upgrade-list"></div>
+    </div>
+
+    <div id="leaderboard" class="panel">
+      <div class="panel-title">Leaderboard</div>
+      <ol id="leaders"></ol>
+    </div>
+
+    <canvas id="minimap" width="260" height="260"></canvas>
+
+    <div id="resources">
+      <div class="res" data-res="1"><span>0</span><img src="img/resources/food_ico.png" alt="food" /></div>
+      <div class="res" data-res="0"><span>0</span><img src="img/resources/wood_ico.png" alt="wood" /></div>
+      <div class="res" data-res="2"><span>0</span><img src="img/resources/stone_ico.png" alt="stone" /></div>
+      <div class="res" data-res="3"><span>0</span><img src="img/resources/gold_ico.png" alt="gold" /></div>
+    </div>
+
+    <div id="bottom">
+      <div id="age"><div id="age-fill"></div><div id="age-text">AGE 1</div></div>
+      <div id="hotbar"></div>
+    </div>
+
+    <div id="item-info" hidden></div>
+    <div id="request" hidden></div>
+    <input id="chat" type="text" maxlength="30" placeholder="Chat" autocomplete="off" spellcheck="false" hidden />
+
+    <div id="shop" class="window" hidden>
+      <div class="window-head">Hat Shop <button class="close" type="button" data-close="shop">✕</button></div>
+      <div id="shop-list" class="window-body"></div>
+    </div>
+
+    <div id="clans" class="window" hidden>
+      <div class="window-head"><span id="clan-title">Clans</span> <button class="close" type="button" data-close="clans">✕</button></div>
+      <div class="window-body">
+        <div id="clan-create">
+          <input id="clan-name" type="text" maxlength="7" placeholder="Clan name" autocomplete="off" spellcheck="false" />
+          <button id="clan-make" class="small-btn" type="button">Create</button>
+        </div>
+        <div id="clan-list"></div>
+      </div>
+    </div>
+  </div>
+
+  <script type="module" src="js/main.js"></script>
+</body>
+</html>
