@@ -2,8 +2,9 @@
 // Trees keep out of the river and the desert, bushes out of the river, and
 // in the desert every bush is a cactus. Rocks and gold go anywhere.
 
-import { MAP, SNOW_TOP, DESERT_TOP, TREES, BUSHES, ROCKS, GOLD_ORES, TREE_SCALES, BUSH_SCALES, ROCK_SCALES, inRiver } from './config.js';
+import { MAP, SNOW_TOP, DESERT_TOP, TREES, BUSHES, ROCKS, GOLD_ORES, inRiver } from './config.js';
 import { rng } from './util.js';
+import { radiusOf } from './sprites.js';
 
 export const TREE = 0;
 export const BUSH = 1;
@@ -22,6 +23,15 @@ export function resourceSprite(type, y) {
 
 export const isCactus = (type, y) => type === BUSH && y > DESERT_TOP;
 
+/** A resource's sprite key, as in shared/sprites.js. */
+export const resourceKey = (type, y) => {
+  const name = resourceSprite(type, y);
+  return name === 'cactus' ? 'drawn/cactus' : `world/${name}`;
+};
+
+/** A resource's radius: the silhouette of the sprite it is drawn with. */
+export const resourceRadius = (type, y) => radiusOf(resourceKey(type, y));
+
 export function generateWorld(seed = 1) {
   const r = rng(seed);
   const out = [];
@@ -32,7 +42,7 @@ export function generateWorld(seed = 1) {
     const cx = Math.floor(x / CELL); const cy = Math.floor(y / CELL);
     for (let i = -1; i <= 1; i++) for (let j = -1; j <= 1; j++) {
       for (const o of grid.get(key(cx + i, cy + j)) || []) {
-        if (Math.hypot(x - o.x, y - o.y) < s + o.scale * 0.6) return false;
+        if (Math.hypot(x - o.x, y - o.y) < s + o.scale + 20) return false;
       }
     }
     return true;
@@ -44,18 +54,18 @@ export function generateWorld(seed = 1) {
     if (!grid.has(k)) grid.set(k, []);
     grid.get(k).push(o);
   };
-  const scatter = (type, n, scales, ok) => {
+  const scatter = (type, n, ok) => {
     for (let placed = 0, tries = 0; placed < n && tries < n * 50; tries++) {
       const x = r.int(60, MAP - 60); const y = r.int(60, MAP - 60);
-      const s = r.pick(scales);
+      const s = resourceRadius(type, y);
       if (!ok(x, y) || !free(x, y, s)) continue;
       add(type, x, y, s);
       placed++;
     }
   };
-  scatter(TREE, TREES, TREE_SCALES, (x, y) => !inRiver(y) && y < DESERT_TOP);
-  scatter(BUSH, BUSHES, BUSH_SCALES, (x, y) => !inRiver(y));
-  scatter(ROCK, ROCKS, ROCK_SCALES, () => true);
-  scatter(GOLD, GOLD_ORES, ROCK_SCALES, () => true);
+  scatter(TREE, TREES, (x, y) => !inRiver(y) && y < DESERT_TOP);
+  scatter(BUSH, BUSHES, (x, y) => !inRiver(y));
+  scatter(ROCK, ROCKS, () => true);
+  scatter(GOLD, GOLD_ORES, () => true);
   return out;
 }

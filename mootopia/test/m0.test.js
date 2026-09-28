@@ -72,8 +72,8 @@ section('World');
   ok(a.filter((r) => r.type === BUSH).every((r) => !C.inRiver(r.y)), 'no bushes in the river');
   ok(a.some((r) => isCactus(r.type, r.y)) && a.filter((r) => isCactus(r.type, r.y)).every((r) => r.y > C.DESERT_TOP), 'desert bushes are cacti, and only there');
   let overlaps = 0;
-  for (let i = 0; i < a.length; i++) for (let j = 0; j < i; j++) if (Math.hypot(a[i].x - a[j].x, a[i].y - a[j].y) < a[i].scale + a[j].scale * 0.6) overlaps++;
-  eq(overlaps, 0, 'nothing is placed on top of anything else');
+  for (let i = 0; i < a.length; i++) for (let j = 0; j < i; j++) if (Math.hypot(a[i].x - a[j].x, a[i].y - a[j].y) < a[i].scale + a[j].scale) overlaps++;
+  eq(overlaps, 0, 'no two things overlap: every silhouette stands clear of the rest');
   ok(a.every((r) => r.x > 0 && r.y > 0 && r.x < C.MAP && r.y < C.MAP), 'everything is on the map');
 }
 
@@ -112,9 +112,9 @@ section('Collisions');
   p.moveDir = 0;
   ticks(g, 40);
   near(p.x, rock.x - rock.scale - C.PLAYER_SCALE, 1, 'you stop flush against a rock');
-  const tree = g.addObject({ x: 7300, y: 5000, scale: 150, type: TREE });
+  const tree = g.addObject({ x: 7300, y: 5000, scale: 98, type: TREE });
   const q = spawnAt(g, 7000, 5000); q.moveDir = 0; ticks(g, 40);
-  near(q.x, tree.x - tree.scale * 0.6 - C.PLAYER_SCALE, 1, 'trees only block at 60% of their size');
+  near(q.x, tree.x - tree.scale - C.PLAYER_SCALE, 1, 'trees block at the edge of their drawn canopy');
 
   const owner = spawnAt(g, 9000, 9000);
   g.addObject({ x: 6000, y: 6000, scale: ITEMS[6].scale, item: ITEMS[6], owner });
@@ -188,4 +188,49 @@ section('Over a real socket');
   await new Promise((r) => setTimeout(r, 200));
   eq(srv.game.players.size, 0, 'closing the socket removes the player');
   await srv.close();
+}
+
+// ── true sizes and hitboxes ─────────────────────────────────────────────
+section('Every sprite at its true size, every hitbox from its sprite');
+{
+  const { readdirSync, readFileSync } = await import('node:fs');
+  const { readPng } = await import('../tools/png.js');
+  const { measureSprite } = await import('#shared/measure.js');
+  const { MEASURED } = await import('#shared/sprite-sizes.js');
+  const { DRAWN, PX, OUTLINE, radiusOf } = await import('#shared/sprites.js');
+  const { ITEMS, itemSpriteKey } = await import('#shared/items.js');
+  const { ANIMALS, animalSpriteKey } = await import('#shared/animals.js');
+  const { resourceKey } = await import('#shared/world.js');
+  const root = new URL('../client/img/', import.meta.url).pathname;
+
+  let stale = []; let files = 0;
+  for (const dir of ['world', 'items', 'animals', 'hats', 'weapons']) {
+    for (const f of readdirSync(root + dir).filter((n) => n.endsWith('.png') && !n.includes('_shadow'))) {
+      files++;
+      const key = `${dir}/${f.slice(0, -4)}`;
+      const m = measureSprite(readPng(root + dir + '/' + f));
+      const t = MEASURED[key];
+      if (!t || t.r !== m.radius || t.outline !== m.outline || t.w !== m.width) stale.push(key);
+    }
+  }
+  eq(stale.join(', '), '', `the size table matches a fresh measurement of all ${files} sprites`);
+
+  const off = Object.entries({ ...MEASURED, ...DRAWN }).filter(([, m]) => m.outline !== undefined && Math.abs(m.outline * PX - OUTLINE) > 0.5);
+  eq(off.map(([k, m]) => `${k} ${m.outline}px`).join(', '), '', `every outline, drawn or painted, is ${OUTLINE} ± 0.5 world units on screen`);
+  eq(OUTLINE, 4, 'which is the art’s 8 px pen at 0.5 world units per pixel');
+  const render = readFileSync(new URL('../client/js/render.js', import.meta.url), 'utf8');
+  ok(render.includes('const OUTLINE_W = OUTLINE;'), 'and the player, drawn in code, uses the same outline');
+
+  const placed = ITEMS.filter((it) => it.group.place);
+  ok(placed.every((it) => it.scale === radiusOf(itemSpriteKey(it))), `all ${placed.length} buildings collide at their sprite’s silhouette`);
+  ok(ANIMALS.every((a) => a.scale === radiusOf(animalSpriteKey(a))), `all ${ANIMALS.length} animals do too`);
+  const world = generateWorld(3);
+  ok(world.every((o) => o.scale === radiusOf(resourceKey(o.type, o.y))), 'and every tree, bush, cactus, rock and gold ore');
+
+  const g = emptyGame();
+  const wall = ITEMS.find((it) => it.name === 'Wood Wall');
+  const owner = spawnAt(g, 9000, 9000);
+  const o = g.addObject({ x: 6000, y: 6000, scale: wall.scale, item: wall, owner });
+  const p = spawnAt(g, 5800, 6000); p.moveDir = 0; ticks(g, 30);
+  near(p.x, o.x - wall.scale - C.PLAYER_SCALE, 0.5, 'walking into a wall stops you exactly at its drawn edge');
 }

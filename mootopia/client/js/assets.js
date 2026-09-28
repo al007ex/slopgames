@@ -1,7 +1,10 @@
 // Sprites: the drawn art in img/, finishes derived from it by recolouring, and
 // the few pieces painted here in code in the same outlined style.
 
-const OUT = '#3d3f42';
+import { DRAWN, OUTLINE_PX } from '#shared/sprites.js';
+
+// The outline colour of the drawn art.
+const OUT = '#282828';
 const cache = new Map();
 
 function load(src) {
@@ -139,204 +142,202 @@ export function preload({ weapons, items, animals, hats }) {
 }
 
 // ── painted pieces ───────────────────────────────────────────────────────
-// Each is painted on a 256 px canvas in the same thick-outline style as the
-// drawn art. Animals face down the canvas (+y), like the drawn animals do.
+// Each is painted in a 256-wide design space onto a canvas of the size given
+// in shared/sprites.js, with the art's own pen: every outline is exactly
+// OUTLINE_PX canvas pixels, so drawn at PX it matches everything else.
+// Animals face down the canvas (+y), like the drawn animals do.
 
-function pen(g, fill, width = 12) {
-  g.fillStyle = fill; g.strokeStyle = OUT; g.lineWidth = width; g.lineJoin = 'round'; g.lineCap = 'round';
+let PEN = OUTLINE_PX;
+
+function sheet(key) {
+  const { w, h } = DRAWN[key];
+  const c = canvas(w, h);
+  const g = c.getContext('2d');
+  const u = w / 256;
+  g.scale(u, u);
+  PEN = OUTLINE_PX / u;
+  return [c, g];
 }
-function blob(g, fill, draw, width = 12) { pen(g, fill, width); g.beginPath(); draw(); g.fill(); g.stroke(); }
+
+function pen(g, fill) {
+  g.fillStyle = fill; g.strokeStyle = OUT; g.lineWidth = PEN; g.lineJoin = 'round'; g.lineCap = 'round';
+}
+function blob(g, fill, draw) { pen(g, fill); g.beginPath(); draw(); g.fill(); g.stroke(); }
 const ellipse = (g, x, y, rx, ry, rot = 0) => () => g.ellipse(x, y, rx, ry, rot, 0, Math.PI * 2);
 const circle = (g, x, y, r) => () => g.arc(x, y, r, 0, Math.PI * 2);
+/** The soft grey glow the drawn art has around its outline. */
 function halo(g, draw) {
-  g.save(); g.strokeStyle = 'rgba(0,0,0,0.12)'; g.lineWidth = 26; g.lineJoin = 'round'; g.beginPath(); draw(); g.stroke(); g.restore();
+  g.save(); g.strokeStyle = 'rgba(0,0,0,0.13)'; g.lineWidth = PEN * 3.2; g.lineJoin = 'round'; g.beginPath(); draw(); g.stroke(); g.restore();
 }
 function shine(g, x, y, rx, ry, alpha = 0.18) {
   g.save(); g.fillStyle = `rgba(255,255,255,${alpha})`; g.beginPath(); g.ellipse(x, y, rx, ry, 0, 0, Math.PI * 2); g.fill(); g.restore();
 }
+function strokes(g, color, width, segs) {
+  g.save(); g.strokeStyle = color; g.lineWidth = width; g.lineCap = 'round';
+  for (const [x1, y1, x2, y2] of segs) { g.beginPath(); g.moveTo(x1, y1); g.lineTo(x2, y2); g.stroke(); }
+  g.restore();
+}
 
-function drawBoar() { return paintBoar({ body: '#8a5a3b', dark: '#5e3b27', snout: '#c98b73', tusk: '#f4ecd8', big: false }); }
-function drawTusker() { return paintBoar({ body: '#6e6258', dark: '#4a403a', snout: '#a98f80', tusk: '#fff7e0', big: true }); }
+function drawBoar() { return paintBoar('drawn/boar', { body: '#8a5a3b', dark: '#5e3b27', snout: '#c98b73', tusk: '#f4ecd8', big: false }); }
+function drawTusker() { return paintBoar('drawn/tusker', { body: '#6e6258', dark: '#4a403a', snout: '#a98f80', tusk: '#fff7e0', big: true }); }
 
-function paintBoar({ body, dark, snout, tusk, big }) {
-  const c = canvas(256); const g = c.getContext('2d');
-  // tail
-  blob(g, dark, () => { g.moveTo(128, 34); g.quadraticCurveTo(116, 16, 128, 8); }, 10);
+function paintBoar(key, { body, dark, snout, tusk, big }) {
+  const [c, g] = sheet(key);
+  blob(g, dark, () => { g.moveTo(122, 36); g.quadraticCurveTo(112, 20, 126, 12); g.quadraticCurveTo(132, 22, 134, 36); g.closePath(); });
   const back = ellipse(g, 128, 104, 62, 76);
   halo(g, back);
   blob(g, body, back);
-  // bristly ridge down the spine
   g.save(); g.fillStyle = dark; g.beginPath();
-  for (let i = 0; i <= 8; i++) { const y = 42 + i * 13; g.lineTo(128 + (i % 2 ? 10 : -10), y); }
-  for (let i = 8; i >= 0; i--) { const y = 42 + i * 13; g.lineTo(128 + (i % 2 ? 4 : -4), y + 6); }
+  for (let i = 0; i <= 8; i++) g.lineTo(128 + (i % 2 ? 10 : -10), 42 + i * 13);
+  for (let i = 8; i >= 0; i--) g.lineTo(128 + (i % 2 ? 4 : -4), 48 + i * 13);
   g.fill(); g.restore();
   shine(g, 104, 84, 18, 30);
-  if (big) {
-    // a battered leather saddle of scars
-    g.save(); g.strokeStyle = '#3a322d'; g.lineWidth = 6; g.lineCap = 'round';
-    for (const [x1, y1, x2, y2] of [[92, 70, 110, 88], [148, 66, 164, 90], [100, 124, 118, 140]]) { g.beginPath(); g.moveTo(x1, y1); g.lineTo(x2, y2); g.stroke(); }
-    g.restore();
-  }
-  // head
-  const head = ellipse(g, 128, 176, 50, 44);
-  blob(g, body, head);
-  // ears
-  blob(g, dark, () => { g.moveTo(88, 150); g.lineTo(72, 128); g.lineTo(100, 138); g.closePath(); }, 9);
-  blob(g, dark, () => { g.moveTo(168, 150); g.lineTo(184, 128); g.lineTo(156, 138); g.closePath(); }, 9);
-  // eyes
+  if (big) strokes(g, '#3a322d', 6, [[92, 70, 110, 88], [148, 66, 164, 90], [100, 124, 118, 140]]);
+  blob(g, body, ellipse(g, 128, 176, 50, 44));
+  blob(g, dark, () => { g.moveTo(88, 150); g.lineTo(72, 128); g.lineTo(100, 138); g.closePath(); });
+  blob(g, dark, () => { g.moveTo(168, 150); g.lineTo(184, 128); g.lineTo(156, 138); g.closePath(); });
   g.fillStyle = '#1f1f22';
   g.beginPath(); g.arc(106, 176, 6, 0, Math.PI * 2); g.arc(150, 176, 6, 0, Math.PI * 2); g.fill();
-  // snout
-  blob(g, snout, ellipse(g, 128, 208, 26, 20), 10);
+  blob(g, snout, ellipse(g, 128, 208, 26, 20));
   g.fillStyle = '#5a3a2e';
   g.beginPath(); g.ellipse(119, 208, 4, 6, 0, 0, Math.PI * 2); g.ellipse(137, 208, 4, 6, 0, 0, Math.PI * 2); g.fill();
-  // tusks
   const t = big ? 1.5 : 1;
-  blob(g, tusk, () => { g.moveTo(104, 206); g.quadraticCurveTo(84 - 6 * t, 214 + 6 * t, 90 - 4 * t, 230 + 10 * t); g.quadraticCurveTo(100, 224, 108, 214); }, 7);
-  blob(g, tusk, () => { g.moveTo(152, 206); g.quadraticCurveTo(172 + 6 * t, 214 + 6 * t, 166 + 4 * t, 230 + 10 * t); g.quadraticCurveTo(156, 224, 148, 214); }, 7);
+  blob(g, tusk, () => { g.moveTo(104, 206); g.quadraticCurveTo(84 - 6 * t, 214 + 6 * t, 90 - 4 * t, 230 + 10 * t); g.quadraticCurveTo(100, 224, 108, 214); });
+  blob(g, tusk, () => { g.moveTo(152, 206); g.quadraticCurveTo(172 + 6 * t, 214 + 6 * t, 166 + 4 * t, 230 + 10 * t); g.quadraticCurveTo(156, 224, 148, 214); });
   return c;
 }
 
 function drawBear() {
-  const c = canvas(256); const g = c.getContext('2d');
+  const [c, g] = sheet('drawn/bear');
   const fur = '#7a5234'; const dark = '#553722'; const muzzle = '#caa47a';
-  const body = ellipse(g, 128, 104, 86, 84);
+  const body = ellipse(g, 128, 108, 84, 82);
   halo(g, body);
   blob(g, fur, body);
-  shine(g, 96, 76, 26, 34, 0.14);
-  // a spiked iron collar where the head meets the body
-  pen(g, '#8d939b', 10);
-  g.beginPath(); g.ellipse(128, 150, 70, 22, 0, 0, Math.PI * 2); g.fill(); g.stroke();
+  shine(g, 96, 80, 26, 34, 0.14);
+  blob(g, '#8d939b', ellipse(g, 128, 152, 70, 22));
   for (let i = 0; i < 7; i++) {
-    const a = Math.PI * (0.1 + i * 0.133); const x = 128 + Math.cos(a) * 70; const y = 150 + Math.sin(a) * 22;
-    blob(g, '#c9ced4', () => { g.moveTo(x - 8, y); g.lineTo(x, y + 18); g.lineTo(x + 8, y); g.closePath(); }, 6);
+    const a = Math.PI * (0.1 + i * 0.133); const x = 128 + Math.cos(a) * 70; const y = 152 + Math.sin(a) * 22;
+    blob(g, '#c9ced4', () => { g.moveTo(x - 8, y); g.lineTo(x, y + 16); g.lineTo(x + 8, y); g.closePath(); });
   }
-  // paws with claws
   for (const side of [-1, 1]) {
-    blob(g, dark, ellipse(g, 128 + side * 74, 190, 24, 30));
-    g.save(); g.strokeStyle = '#ece4d2'; g.lineWidth = 5; g.lineCap = 'round';
-    for (let k = -1; k <= 1; k++) { g.beginPath(); g.moveTo(128 + side * 74 + k * 9, 212); g.lineTo(128 + side * 74 + k * 11, 226); g.stroke(); }
-    g.restore();
+    blob(g, dark, ellipse(g, 128 + side * 72, 190, 24, 30));
+    strokes(g, '#ece4d2', 5, [-1, 0, 1].map((k) => [128 + side * 72 + k * 9, 212, 128 + side * 72 + k * 11, 224]));
   }
-  // head
-  blob(g, fur, ellipse(g, 128, 186, 54, 50));
-  blob(g, fur, circle(g, 84, 150, 16), 10);
-  blob(g, fur, circle(g, 172, 150, 16), 10);
-  blob(g, muzzle, ellipse(g, 128, 208, 28, 22), 10);
+  blob(g, fur, ellipse(g, 128, 188, 54, 48));
+  blob(g, fur, circle(g, 84, 152, 16));
+  blob(g, fur, circle(g, 172, 152, 16));
+  blob(g, muzzle, ellipse(g, 128, 210, 28, 20));
   g.fillStyle = '#26211f';
-  g.beginPath(); g.ellipse(128, 200, 11, 7, 0, 0, Math.PI * 2); g.fill();
-  g.beginPath(); g.arc(106, 180, 6, 0, Math.PI * 2); g.arc(150, 180, 6, 0, Math.PI * 2); g.fill();
-  // an old scar over one eye
-  g.save(); g.strokeStyle = '#e6b8a2'; g.lineWidth = 4; g.lineCap = 'round';
-  g.beginPath(); g.moveTo(140, 164); g.lineTo(160, 194); g.stroke();
-  g.beginPath(); g.moveTo(146, 172); g.lineTo(156, 170); g.moveTo(150, 182); g.lineTo(160, 180); g.stroke();
-  g.restore();
+  g.beginPath(); g.ellipse(128, 202, 11, 7, 0, 0, Math.PI * 2); g.fill();
+  g.beginPath(); g.arc(106, 182, 6, 0, Math.PI * 2); g.arc(150, 182, 6, 0, Math.PI * 2); g.fill();
+  strokes(g, '#e6b8a2', 4, [[140, 166, 160, 196], [146, 174, 156, 172], [150, 184, 160, 182]]);
   return c;
 }
 
 function drawChest() {
-  const c = canvas(256); const g = c.getContext('2d');
+  const [c, g] = sheet('drawn/chest');
   const box = () => g.roundRect(40, 58, 176, 140, 18);
   halo(g, box);
   blob(g, '#9a6a3f', box);
-  g.save(); g.strokeStyle = '#6f4a2a'; g.lineWidth = 5;
-  for (const y of [92, 126, 160]) { g.beginPath(); g.moveTo(52, y); g.lineTo(204, y); g.stroke(); }
-  g.restore();
-  pen(g, '#e2b53e', 9);
-  for (const x of [66, 172]) { g.beginPath(); g.roundRect(x, 58, 18, 140, 4); g.fill(); g.stroke(); }
-  g.beginPath(); g.roundRect(108, 104, 40, 46, 8); g.fill(); g.stroke();
+  strokes(g, '#6f4a2a', 5, [[52, 92, 204, 92], [52, 126, 204, 126], [52, 160, 204, 160]]);
+  for (const x of [66, 172]) blob(g, '#e2b53e', () => g.roundRect(x, 58, 18, 140, 4));
+  blob(g, '#e2b53e', () => g.roundRect(108, 104, 40, 46, 8));
   g.fillStyle = OUT; g.beginPath(); g.arc(128, 122, 6, 0, Math.PI * 2); g.fill(); g.fillRect(125, 124, 6, 14);
   shine(g, 90, 80, 30, 10, 0.2);
   return c;
 }
 
 function drawCactus() {
-  const c = canvas(256); const g = c.getContext('2d');
+  const [c, g] = sheet('drawn/cactus');
   const shape = () => {
-    for (let i = 0; i < 8; i++) {
-      const a = i / 8 * Math.PI * 2; const r = i % 2 ? 72 : 96;
+    for (let i = 0; i <= 8; i++) {
+      const a = (i % 8) / 8 * Math.PI * 2; const r = i % 2 ? 74 : 98;
       const x = 128 + Math.cos(a) * r; const y = 128 + Math.sin(a) * r;
-      if (i === 0) g.moveTo(x, y); else g.quadraticCurveTo(128 + Math.cos(a - 0.4) * (r + 16), 128 + Math.sin(a - 0.4) * (r + 16), x, y);
+      if (i === 0) g.moveTo(x, y); else g.quadraticCurveTo(128 + Math.cos(a - 0.4) * (r + 14), 128 + Math.sin(a - 0.4) * (r + 14), x, y);
     }
-    g.quadraticCurveTo(128 + Math.cos(-0.4) * 112, 128 + Math.sin(-0.4) * 112, 224, 128);
+    g.closePath();
   };
   halo(g, shape);
   blob(g, '#6f9d4a', shape);
-  blob(g, '#8cbc5c', circle(g, 128, 128, 46), 10);
+  blob(g, '#8cbc5c', circle(g, 128, 128, 46));
   g.fillStyle = '#f4efd6';
   for (let i = 0; i < 16; i++) { const a = i / 16 * Math.PI * 2; const r = i % 2 ? 62 : 84; g.beginPath(); g.arc(128 + Math.cos(a) * r, 128 + Math.sin(a) * r, 3.5, 0, Math.PI * 2); g.fill(); }
-  blob(g, '#e57a9a', circle(g, 128, 128, 12), 6);
+  blob(g, '#e57a9a', circle(g, 128, 128, 12));
   return c;
 }
 
 function drawTurretBase() {
-  const c = canvas(256); const g = c.getContext('2d');
+  const [c, g] = sheet('drawn/turret');
   const oct = () => { for (let i = 0; i < 8; i++) { const a = (i + 0.5) / 8 * Math.PI * 2; g.lineTo(128 + Math.cos(a) * 104, 128 + Math.sin(a) * 104); } g.closePath(); };
   halo(g, oct);
   blob(g, '#a3a7ad', oct);
-  blob(g, '#8a8e95', circle(g, 128, 128, 64), 10);
+  blob(g, '#8a8e95', circle(g, 128, 128, 64));
   return c;
 }
 
 function drawTurretTop() {
-  const c = canvas(256); const g = c.getContext('2d');
-  blob(g, '#5d6168', () => g.roundRect(128, 110, 110, 36, 10));
+  const [c, g] = sheet('drawn/turret');
+  blob(g, '#5d6168', () => g.roundRect(128, 112, 108, 32, 10));
   blob(g, '#6f747b', circle(g, 128, 128, 50));
   shine(g, 112, 112, 16, 12, 0.25);
   return c;
 }
 
 function drawBlocker() {
-  const c = canvas(256); const g = c.getContext('2d');
+  const [c, g] = sheet('drawn/blocker');
   const r = circle(g, 128, 128, 100);
   halo(g, r);
   blob(g, '#b88d5d', r);
-  blob(g, '#d6ae78', circle(g, 128, 128, 70), 10);
-  g.save(); g.strokeStyle = '#c24d4d'; g.lineWidth = 22; g.lineCap = 'round';
-  g.beginPath(); g.moveTo(90, 90); g.lineTo(166, 166); g.moveTo(166, 90); g.lineTo(90, 166); g.stroke();
-  g.restore();
+  blob(g, '#d6ae78', circle(g, 128, 128, 70));
+  strokes(g, '#c24d4d', 22, [[90, 90, 166, 166], [166, 90, 90, 166]]);
   return c;
 }
 
 // Held pointing forward: along +x of the canvas.
 function drawMusket() {
-  const c = canvas(256); const g = c.getContext('2d');
-  blob(g, '#8a5a36', () => { g.moveTo(10, 118); g.lineTo(98, 112); g.lineTo(104, 144); g.lineTo(14, 150); g.closePath(); }, 10);
-  blob(g, '#5c6068', () => g.roundRect(90, 116, 160, 18, 7), 10);
-  blob(g, '#7b8089', () => g.roundRect(118, 132, 34, 12, 4), 8);
+  const [c, g] = sheet('drawn/musket');
+  blob(g, '#8a5a36', () => { g.moveTo(10, 118); g.lineTo(98, 112); g.lineTo(104, 144); g.lineTo(14, 150); g.closePath(); });
+  blob(g, '#5c6068', () => g.roundRect(90, 116, 160, 18, 7));
+  blob(g, '#7b8089', () => g.roundRect(118, 132, 34, 12, 4));
   shine(g, 170, 121, 60, 3, 0.28);
   return c;
 }
 
 // Held like a polearm: a long pole running down the canvas with a claw at the end.
 function drawGrabby() {
-  const c = canvas(256, 410); const g = c.getContext('2d');
-  blob(g, '#8a6446', () => g.roundRect(118, 10, 20, 300, 9), 10);
-  pen(g, '#9aa1ab', 10);
-  g.beginPath(); g.roundRect(104, 300, 48, 24, 8); g.fill(); g.stroke();
+  const [c, g] = sheet('drawn/grabby');
+  blob(g, '#8a6446', () => g.roundRect(118, 10, 20, 300, 9));
+  blob(g, '#9aa1ab', () => g.roundRect(104, 300, 48, 24, 8));
   for (const side of [-1, 1]) {
-    blob(g, '#b9c0c9', () => { g.moveTo(128 + side * 16, 320); g.quadraticCurveTo(128 + side * 50, 350, 128 + side * 22, 398); g.lineTo(128 + side * 10, 390); g.quadraticCurveTo(128 + side * 28, 352, 128 + side * 4, 326); g.closePath(); }, 8);
+    blob(g, '#b9c0c9', () => { g.moveTo(128 + side * 16, 320); g.quadraticCurveTo(128 + side * 50, 350, 128 + side * 22, 398); g.lineTo(128 + side * 10, 390); g.quadraticCurveTo(128 + side * 28, 352, 128 + side * 4, 326); g.closePath(); });
   }
   return c;
 }
 
+/** The repeater: the crossbow with a bolt magazine on top, same pen. */
 function addMagazine(cross) {
-  const c = canvas(cross.width || cross.naturalWidth, cross.height || cross.naturalHeight);
+  const w = cross.width || cross.naturalWidth; const h = cross.height || cross.naturalHeight;
+  const c = canvas(w, h);
   const g = c.getContext('2d');
   g.drawImage(cross, 0, 0);
-  const s = c.width / 256;
-  g.scale(s, s);
-  blob(g, '#7a5a3c', () => g.roundRect(104, 70, 48, 58, 8), 9);
-  g.save(); g.strokeStyle = '#d9d3c4'; g.lineWidth = 5;
-  for (const x of [116, 128, 140]) { g.beginPath(); g.moveTo(x, 80); g.lineTo(x, 118); g.stroke(); }
-  g.restore();
+  const u = w / 256;
+  g.scale(u, u);
+  PEN = OUTLINE_PX / u;
+  blob(g, '#7a5a3c', () => g.roundRect(104, 70, 48, 58, 8));
+  strokes(g, '#d9d3c4', 5, [[116, 80, 116, 118], [128, 80, 128, 118], [140, 80, 140, 118]]);
   return c;
 }
 
 function drawBullet() {
-  const c = canvas(64); const g = c.getContext('2d');
-  blob(g, '#4a4d52', circle(g, 32, 32, 14), 6);
+  const [c, g] = sheet('drawn/bullet');
+  blob(g, '#9aa0a8', circle(g, 128, 128, 56));
   return c;
 }
 
 const DRAWN_ANIMALS = { boar: drawBoar, tusker: drawTusker, bear: drawBear, chest: drawChest };
+
+/** Every painted piece, keyed like shared/sprites.js, for measuring. */
+export const PAINTED = {
+  'drawn/boar': drawBoar, 'drawn/tusker': drawTusker, 'drawn/bear': drawBear, 'drawn/chest': drawChest, 'drawn/cactus': drawCactus,
+  'drawn/turret': drawTurretBase, 'drawn/blocker': drawBlocker, 'drawn/musket': drawMusket, 'drawn/grabby': drawGrabby, 'drawn/bullet': drawBullet,
+};

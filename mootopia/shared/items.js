@@ -1,3 +1,5 @@
+import { radiusOf } from './sprites.js';
+
 // Weapons, placeable items and projectiles.
 //
 // Sprite boxes: a weapon is drawn in the holder's frame (x forward, y to the
@@ -91,7 +93,7 @@ export const ITEMS = [
   { age: 5, pre: 1, name: 'Faster Windmill', desc: 'Makes more gold over time.', group: g(3), cost: { wood: 60, stone: 20 }, health: 500, pps: 1.5, turnSpeed: 0.0025, sprite: 'mill', scale: 47, spritePadding: 25, holdOffset: 20, placeOffset: 5 },
   { age: 8, pre: 1, name: 'Power Mill', desc: 'Makes the most gold over time.', group: g(3), cost: { wood: 100, stone: 50 }, health: 800, pps: 2, turnSpeed: 0.005, sprite: 'mill', tint: 'power', scale: 47, spritePadding: 25, holdOffset: 20, placeOffset: 5 },
   { age: 5, name: 'Mine', desc: 'A rock you can mine for stone forever.', group: g(4), type: 2, cost: { wood: 20, stone: 100 }, sprite: 'mine', scale: 65, holdOffset: 20, placeOffset: 0 },
-  { age: 5, name: 'Sapling', desc: 'A tree you can farm for wood.', group: g(11), type: 0, cost: { wood: 150 }, colDiv: 0.5, sprite: 'sapling', scale: 110, holdOffset: 50, placeOffset: -15 },
+  { age: 5, name: 'Sapling', desc: 'A tree you can farm for wood.', group: g(11), type: 0, cost: { wood: 150 }, sprite: 'sapling', scale: 110, holdOffset: 50, placeOffset: -15 },
   { age: 4, name: 'Pit Trap', desc: 'Traps anyone who walks over it.', group: g(5), cost: { wood: 30, stone: 30 }, trap: true, ignoreCollision: true, hideFromEnemy: true, health: 500, colDiv: 0.2, sprite: 'trap', scale: 50, holdOffset: 20, placeOffset: -5 },
   { age: 4, name: 'Boost Pad', desc: 'Launches you forwards.', group: g(6), cost: { stone: 20, wood: 5 }, ignoreCollision: true, boostSpeed: 1.5, health: 150, colDiv: 0.7, sprite: 'boost_pad', scale: 45, holdOffset: 20, placeOffset: -5 },
   { age: 7, name: 'Turret', desc: 'Shoots at enemies nearby.', group: g(7), cost: { wood: 200, stone: 150 }, health: 800, projectile: 1, shootRange: 700, shootRate: 2200, sprite: 'turret', drawn: 'turret', scale: 43, holdOffset: 20, placeOffset: -5 },
@@ -102,7 +104,14 @@ export const ITEMS = [
   { age: 7, name: 'Teleporter', desc: 'Sends you somewhere random.', group: g(13), cost: { wood: 60, stone: 60 }, ignoreCollision: true, teleport: true, health: 200, colDiv: 0.7, sprite: 'teleporter', scale: 45, holdOffset: 20, placeOffset: -5 },
 ];
 
-ITEMS.forEach((it, i) => { it.id = i; });
+/** The sprite an item is drawn with, keyed like shared/sprites.js. */
+export const itemSpriteKey = (it) => (it.drawn ? `drawn/${it.drawn}` : `items/${it.sprite === 'mill' ? 'mill_1' : it.sprite}`);
+
+ITEMS.forEach((it, i) => {
+  it.id = i;
+  // A placed item's hitbox is its drawn silhouette. Food is never placed.
+  if (it.group.place) it.scale = radiusOf(itemSpriteKey(it));
+});
 // `pre` counts back from the item: "needs the item this many places earlier".
 ITEMS.forEach((it) => { if (it.pre) it.pre = it.id - it.pre; });
 

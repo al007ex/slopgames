@@ -6,6 +6,7 @@ import { WEAPONS, ITEMS, costOf } from '#shared/items.js';
 import { SHOP_HATS } from '#shared/hats.js';
 import * as A from './assets.js';
 import { itemDrawSize } from './render.js';
+import { spriteInfo } from '#shared/sprites.js';
 
 const $ = (id) => document.getElementById(id);
 const esc = (s) => String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -69,13 +70,14 @@ export class UI {
       const base = A.itemSprite(it);
       if (!base) ok = false;
       else {
-        const size = itemDrawSize(it);
+        const { w, h } = itemDrawSize(it);
         const blades = it.sprite === 'mill' ? A.millBlades(it) : null;
-        const span = blades ? it.scale * 2.35 : size;
+        const bs = spriteInfo('items/mill_2');
+        const span = blades ? Math.max(bs.w, bs.h) : Math.max(w, h);
         const k = c.width / span * 0.9;
-        g.drawImage(base, -size * k / 2, -size * k / 2, size * k, size * k);
-        if (it.sprite === 'mill') { if (blades) { const b = it.scale * 2.35 * k; g.drawImage(blades, -b / 2, -b / 2, b, b); } else ok = false; }
-        if (it.drawn === 'turret') g.drawImage(A.turretTop(), -size * k / 2, -size * k / 2, size * k, size * k);
+        g.drawImage(base, -w * k / 2, -h * k / 2, w * k, h * k);
+        if (it.sprite === 'mill') { if (blades) g.drawImage(blades, -bs.w * k / 2, -bs.h * k / 2, bs.w * k, bs.h * k); else ok = false; }
+        if (it.drawn === 'turret') g.drawImage(A.turretTop(), -w * k / 2, -h * k / 2, w * k, h * k);
       }
     }
     g.restore();

@@ -4,15 +4,16 @@
 // turrets, players on platforms, bushes and gold, then tree canopies.
 
 import * as C from '#shared/config.js';
-import { WEAPONS, ITEMS, PROJECTILES } from '#shared/items.js';
-import { ANIMALS } from '#shared/animals.js';
+import { WEAPONS, ITEMS, PROJECTILES, itemSpriteKey } from '#shared/items.js';
+import { ANIMALS, animalSpriteKey } from '#shared/animals.js';
 import { hatById } from '#shared/hats.js';
-import { resourceSprite, TREE, BUSH } from '#shared/world.js';
+import { resourceSprite, resourceKey, TREE, BUSH } from '#shared/world.js';
+import { spriteInfo, OUTLINE, PX } from '#shared/sprites.js';
 import * as A from './assets.js';
 
-const OUTLINE = '#525252';
-const DARK = '#3d3f42';
-const OUTLINE_W = 5.5;
+// Everything drawn in code uses the art's own outline: same colour, same width.
+const DARK = '#282828';
+const OUTLINE_W = OUTLINE;
 const GRASS = '#b6db66';
 const SNOW = '#ffffff';
 const SAND = '#dbc666';
@@ -23,17 +24,17 @@ const BAR_W = 50;
 const BAR_PAD = 4.5;
 const NAME_Y = 34;
 
-// How big each sprite is drawn, as a multiple of the object's radius.
-const RES_SIZE = { [TREE]: 1.18, [BUSH]: 1.12, 2: 1.2, 3: 1.2 };
-const CACTUS_SIZE = 1.05;
-const ITEM_SIZE = {
-  wood_wall: 1.3, stone_wall: 1.3, spikes: 1.75, greater_spikes: 1.75, spinning_spikes: 1.75, mill: 1.15, mine: 1.3,
-  sapling: 1.05, trap: 1.35, boost_pad: 1.4, turret: 1.3, platform: 1.4, healing_pad: 1.4, spawn_pad: 1.4, blocker: 1.2, teleporter: 1.4,
-  apple: 1.9, cookie_1: 1.7, cheese: 1.7,
-};
-const BLADE_SIZE = 2.35;
+// Sprites are drawn at their true size (shared/sprites.js). Cheese is the one
+// vector drawing; it is drawn at the cookie's size.
+const CHEESE = { w: 75, h: 75, dx: 0, dy: 0 };
 
-export const itemDrawSize = (item) => item.scale * 2 * (ITEM_SIZE[item.sprite] || 1.3);
+/** Drawn size of an item, in world units. */
+export function itemDrawSize(item) {
+  if (item.svg) return CHEESE;
+  return spriteInfo(itemSpriteKey(item));
+}
+
+const bladeSize = () => spriteInfo('items/mill_2');
 
 export class Renderer {
   constructor(canvas) {
@@ -92,7 +93,23 @@ export class Renderer {
     this.drawObjects(objs, 3, now);
 
     this.drawOverlays(s, delta, now);
+    if (this.showHitboxes) this.drawHitboxes(s, objs);
     this.drawMapEdge(ox, oy);
+  }
+
+  /** Debug view (?hitboxes): every collision circle over its sprite. */
+  drawHitboxes(s, objs) {
+    const g = this.g;
+    g.save();
+    g.lineWidth = 2;
+    const ring = (x, y, r, color, dash = []) => { g.strokeStyle = color; g.setLineDash(dash); g.beginPath(); g.arc(x - this.ox, y - this.oy, r, 0, Math.PI * 2); g.stroke(); };
+    for (const o of objs) {
+      ring(o.x, o.y, o.scale, o.item ? '#ff2bd6' : '#00e5ff');
+      if (o.item?.colDiv && o.item.colDiv !== 1) ring(o.x, o.y, o.scale * o.item.colDiv, '#ff2bd6', [6, 6]);
+    }
+    for (const a of s.animals.values()) if (a.visible) ring(a.x, a.y, ANIMALS[a.type].scale, '#ffe600');
+    for (const p of s.players.values()) if (p.visible) ring(p.x, p.y, C.PLAYER_SCALE, '#ff3b3b');
+    g.restore();
   }
 
   // ── ground ────────────────────────────────────────────────────────────
@@ -155,39 +172,39 @@ export class Renderer {
     const name = resourceSprite(o.type, o.y);
     const img = A.worldSprite(name);
     if (!img) return;
-    const s = o.scale * 2 * (name === 'cactus' ? CACTUS_SIZE : RES_SIZE[o.type]);
-    this.g.drawImage(img, -s / 2, -s / 2, s, s);
+    const { w, h } = spriteInfo(resourceKey(o.type, o.y));
+    this.g.drawImage(img, -w / 2, -h / 2, w, h);
     if (o.type === TREE || (o.type === BUSH && name === 'bush_1')) {
       const leaves = A.leafSprite(name);
       if (leaves) {
         this.g.rotate(Math.sin(now * 0.0006 + o.sid) * 0.05);
-        this.g.drawImage(leaves, -s / 2, -s / 2, s, s);
+        this.g.drawImage(leaves, -w / 2, -h / 2, w, h);
       }
     }
   }
 
   drawItemAt(item, o, now) {
     const g = this.g;
-    const s = itemDrawSize(item);
+    const { w, h } = itemDrawSize(item);
     const spin = o?.spin || 0;
     if (item.sprite === 'mill') {
       const base = A.itemSprite(item);
-      if (base) g.drawImage(base, -s / 2, -s / 2, s, s);
+      if (base) g.drawImage(base, -w / 2, -h / 2, w, h);
       const blades = A.millBlades(item);
       if (blades) {
-        const b = item.scale * BLADE_SIZE;
+        const b = bladeSize();
         g.rotate((o ? o.dir : 0) + spin);
-        g.drawImage(blades, -b / 2, -b / 2, b, b);
+        g.drawImage(blades, -b.w / 2, -b.h / 2, b.w, b.h);
       }
       return;
     }
     g.rotate((o ? o.dir : 0) + (item.turnSpeed ? spin : 0));
     const img = A.itemSprite(item);
-    if (img) g.drawImage(img, -s / 2, -s / 2, s, s);
+    if (img) g.drawImage(img, -w / 2, -h / 2, w, h);
     if (item.drawn === 'turret') {
       const top = A.turretTop();
       if (o?.aim !== undefined) g.rotate(o.aim - o.dir);
-      g.drawImage(top, -s / 2, -s / 2, s, s);
+      g.drawImage(top, -w / 2, -h / 2, w, h);
     }
   }
 
@@ -216,16 +233,16 @@ export class Renderer {
     const sc = C.PLAYER_SCALE;
     g.lineWidth = OUTLINE_W; g.lineJoin = 'miter'; g.strokeStyle = DARK;
 
-    if (!building && !w.aboveHand) this.drawTool(w, p.variant, sc);
+    if (!building && !w.aboveHand) this.drawTool(w, p.variant, sc, handAngle);
     g.fillStyle = C.SKIN_COLORS[p.skin] || C.SKIN_COLORS[0];
     circle(g, sc * Math.cos(handAngle), sc * Math.sin(handAngle), HAND_R);
     circle(g, sc * oHandDist * Math.cos(-handAngle * oHandAngle), sc * oHandDist * Math.sin(-handAngle * oHandAngle), HAND_R);
-    if (!building && w.aboveHand) this.drawTool(w, p.variant, sc);
+    if (!building && w.aboveHand) this.drawTool(w, p.variant, sc, handAngle);
     if (building) {
       const item = ITEMS[p.build];
-      const size = itemDrawSize(item) * (item.group.id === 0 ? 1 : 0.9);
+      const { w: iw } = itemDrawSize(item);
       g.save();
-      g.translate(sc - item.holdOffset + size / 2, 0);
+      g.translate(sc - item.holdOffset + iw / 2, 0);
       this.drawItemAt(item, null, 0);
       g.restore();
     }
@@ -235,22 +252,32 @@ export class Renderer {
     if (hat) {
       g.save();
       g.rotate(Math.PI / 2);
+      const { w: hw, h: hh } = spriteInfo(`hats/hat_${hat.id}`);
       const shadow = A.hatShadow(hat.id);
-      if (shadow) g.drawImage(shadow, -hat.scale / 2, -hat.scale / 2, hat.scale, hat.scale);
+      if (shadow) g.drawImage(shadow, -hw / 2, -hh / 2, hw, hh);
       const img = A.hatSprite(hat.id);
-      if (img) g.drawImage(img, -hat.scale / 2, -hat.scale / 2, hat.scale, hat.scale);
+      if (img) g.drawImage(img, -hw / 2, -hh / 2, hw, hh);
       g.restore();
     }
   }
 
-  drawTool(w, variant, sc) {
+  /**
+   * A weapon at its true size. The classic layout puts a length × width box
+   * at (scale + xOff, yOff); the art is drawn to that box, so the box is
+   * resized to the sprite's real size about the hand holding it — the grip
+   * stays in the hand whatever the sprite's proportions.
+   */
+  drawTool(w, variant, sc, handAngle) {
     const g = this.g;
     const img = A.weaponSprite(w, variant);
-    if (img) g.drawImage(img, sc + w.xOff - w.length / 2, w.yOff - w.width / 2, w.length, w.width);
+    if (img) {
+      const { x, y, width, height } = weaponBox(w, sc, handAngle);
+      g.drawImage(img, x, y, width, height);
+    }
     if (w.projectile !== undefined && !w.hideProjectile) {
       const pd = PROJECTILES[w.projectile];
       const arrow = pd.sprite && A.projectileSprite(pd.sprite);
-      if (arrow) g.drawImage(arrow, sc - pd.scale / 2, -pd.scale / 2, pd.scale, pd.scale);
+      if (arrow) { const a = spriteInfo(`weapons/${pd.sprite}`); g.drawImage(arrow, sc - a.w / 2, -a.h / 2, a.w, a.h); }
     }
   }
 
@@ -264,8 +291,9 @@ export class Renderer {
     g.translate(a.x - this.ox, a.y - this.oy);
     g.rotate(a.dir + a.dirPlus - Math.PI / 2);
     if (img) {
-      const s = data.scale * 1.2 * (data.spriteMlt || 1);
-      g.drawImage(img, -s, -s, s * 2, s * 2);
+      // Centred on the middle of the body's silhouette, which is where its hitbox is.
+      const { w, h, dx, dy } = spriteInfo(animalSpriteKey(data));
+      g.drawImage(img, -w / 2 - dx, -h / 2 - dy, w, h);
     }
     g.restore();
   }
@@ -281,8 +309,8 @@ export class Renderer {
       g.rotate(pr.dir);
       if (data.sprite || data.drawn) {
         const img = A.projectileSprite(data.sprite || data.drawn);
-        const sz = data.drawn ? 28 : data.scale;
-        if (img) g.drawImage(img, -sz / 2, -sz / 2, sz, sz);
+        const { w, h } = spriteInfo(data.drawn ? `drawn/${data.drawn}` : `weapons/${data.sprite}`);
+        if (img) g.drawImage(img, -w / 2, -h / 2, w, h);
       } else {
         g.fillStyle = '#939393'; g.strokeStyle = DARK; g.lineWidth = OUTLINE_W;
         circle(g, 0, 0, data.scale / 2);
@@ -356,6 +384,16 @@ export class Renderer {
     g.fillStyle = color;
     g.beginPath(); g.roundRect(x - BAR_W, y + NAME_Y + BAR_PAD, BAR_W * 2 * Math.max(0, Math.min(1, ratio)), 17 - BAR_PAD * 2, 7); g.fill();
   }
+}
+
+/** Where a weapon's sprite goes in its holder's frame (see Renderer.drawTool). */
+export function weaponBox(w, sc, handAngle = Math.PI / 4 * (w.armS || 1)) {
+  const key = w.drawn === 'musket' || w.drawn === 'grabby' ? `drawn/${w.drawn}` : `weapons/${w.sprite}`;
+  const { w: width, h: height } = spriteInfo(key);
+  const hx = sc * Math.cos(handAngle); const hy = sc * Math.sin(handAngle);
+  const cx = hx + (sc + w.xOff - hx) * (width / w.length);
+  const cy = hy + (w.yOff - hy) * (height / w.width);
+  return { x: cx - width / 2, y: cy - height / 2, width, height };
 }
 
 function circle(g, x, y, r) {

@@ -64,6 +64,7 @@ class App {
   constructor() {
     this.state = new State();
     this.renderer = new Renderer($('game'));
+    this.renderer.showHitboxes = new URLSearchParams(location.search).has('hitboxes');
     this.ui = new UI(this);
     this.writer = new Writer(256);
     this.me = this.freshMe();

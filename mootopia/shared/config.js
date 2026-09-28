@@ -22,7 +22,7 @@ export const SEE_X = VIEW_W / 2 * 1.3;
 export const SEE_Y = VIEW_H / 2 * 1.3;
 
 // Players.
-export const PLAYER_SCALE = 35;
+export const PLAYER_SCALE = 35;             // the body; drawn in code with the art's outline
 export const PLAYER_SPEED = 0.0016;        // acceleration per ms, per unit of input
 export const DECEL = 0.993;                // velocity is multiplied by this every ms
 export const SNOW_SPEED = 0.75;
@@ -58,10 +58,7 @@ export const VARIANTS = [
 ];
 export const POISON = { dmg: 5, ticks: 5 };
 
-// Nature.
-export const TREE_SCALES = [150, 160, 165, 175];
-export const BUSH_SCALES = [80, 85, 95];
-export const ROCK_SCALES = [80, 85, 90];
+// Nature. Sizes come from the sprites (shared/sprites.js).
 export const TREES = 460;
 export const BUSHES = 170;
 export const ROCKS = 190;

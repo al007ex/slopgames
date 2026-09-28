@@ -33,10 +33,18 @@ export class GameObject {
     this.sentTo = new Set();
   }
 
-  /** Radius used for collisions. Trees and bushes are softer than they look. */
-  getScale(sM = 1, ignoreColDiv = false) {
-    const solid = this.isItem || this.type === ROCK || this.type === GOLD;
-    return this.scale * (solid ? 1 : 0.6 * sM) * (ignoreColDiv ? 1 : this.colDiv);
+  /**
+   * Radius used for collisions: the sprite's silhouette. Walk-over pads use a
+   * smaller trigger zone (colDiv) so you have to actually step onto them.
+   */
+  getScale(ignoreColDiv = false) {
+    return this.scale * (ignoreColDiv ? 1 : this.colDiv);
+  }
+
+  /** How close a new building may come. Canopies may overhang buildings a little. */
+  get placeRadius() {
+    if (this.item?.blocker) return this.item.blocker;
+    return this.isItem || this.type === ROCK || this.type === GOLD ? this.scale : this.scale * 0.6;
   }
 
   visibleTo(player) {
@@ -117,8 +125,7 @@ export class ObjectManager {
   canPlace(x, y, s, item) {
     if (x - s < 0 || y - s < 0 || x + s > MAP || y + s > MAP) return false;
     for (const o of this.near(x, y, s + 320)) {
-      const block = o.item?.blocker || o.getScale(0.6, o.isItem);
-      if (dist(x, y, o.x, o.y) < s + block) return false;
+      if (dist(x, y, o.x, o.y) < s + o.placeRadius) return false;
     }
     if (item?.name !== PLATFORM && inRiver(y)) return false;
     return true;
