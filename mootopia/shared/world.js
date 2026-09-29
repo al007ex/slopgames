@@ -11,26 +11,48 @@ export const BUSH = 1;
 export const ROCK = 2;
 export const GOLD = 3;
 
-// The sprite each kind uses, by biome. `drawn` sprites are painted in code.
-export function resourceSprite(type, y) {
+/** A stable 0–1 number from a position, so everyone agrees on a resource's look. */
+export function spot(x, y, salt = 0) {
+  let h = Math.imul(Math.round(x) ^ 0x27d4eb2d, 0x165667b1) ^ Math.imul(Math.round(y) + salt * 0x9e3779b9, 0x85ebca6b);
+  h = Math.imul(h ^ (h >>> 15), 0x2c1b3c6d);
+  h = Math.imul(h ^ (h >>> 12), 0x297a2d39);
+  return ((h ^ (h >>> 15)) >>> 0) / 4294967296;
+}
+
+// The sprite each kind uses: by biome, with a mix of kinds in the grassland.
+export function resourceSprite(type, x, y) {
   const snow = y < SNOW_TOP;
   const desert = y > DESERT_TOP;
-  if (type === TREE) return snow ? 'wintertree_1' : 'tree_1';
-  if (type === BUSH) return desert ? 'cactus' : 'bush_1';
-  if (type === ROCK) return snow ? 'darkstone_1' : 'stone_1';
+  const v = spot(x, y, 1);
+  if (type === TREE) return snow ? 'wintertree_1' : v < 0.16 ? 'sakuratree_1' : v < 0.32 ? 'automntree_1' : 'tree_1';
+  if (type === BUSH) return desert ? 'cactus' : !snow && v < 0.3 ? 'sakurabush_1' : 'bush_1';
+  if (type === ROCK) return snow || v < 0.3 ? 'darkstone_1' : 'stone_1';
   return 'gold_1';
 }
 
 export const isCactus = (type, y) => type === BUSH && y > DESERT_TOP;
 
 /** A resource's sprite key, as in shared/sprites.js. */
-export const resourceKey = (type, y) => {
-  const name = resourceSprite(type, y);
+export const resourceKey = (type, x, y) => {
+  const name = resourceSprite(type, x, y);
   return name === 'cactus' ? 'drawn/cactus' : `world/${name}`;
 };
 
-/** A resource's radius: the silhouette of the sprite it is drawn with. */
-export const resourceRadius = (type, y) => radiusOf(resourceKey(type, y));
+// How much bigger than true size each kind is drawn — a range, so no two
+// trees are quite alike. Tuned to the look of the classic games: big trees,
+// solid rocks, modest bushes.
+const SIZE = { [TREE]: [1.2, 1.42], [BUSH]: [0.95, 1.06], [ROCK]: [1.08, 1.2], [GOLD]: [1.08, 1.18] };
+// Sakura and autumn trees are the smaller, showier kind.
+const BLOSSOM = [0.88, 1.02];
+
+export const resourceScale = (type, x, y) => {
+  const name = resourceSprite(type, x, y);
+  const [lo, hi] = name === 'sakuratree_1' || name === 'automntree_1' ? BLOSSOM : SIZE[type];
+  return lo + (hi - lo) * spot(x, y, 2);
+};
+
+/** A resource's radius: the silhouette of the sprite it is drawn with, at its size. */
+export const resourceRadius = (type, x, y) => +(radiusOf(resourceKey(type, x, y)) * resourceScale(type, x, y)).toFixed(2);
 
 export function generateWorld(seed = 1) {
   const r = rng(seed);
@@ -57,7 +79,7 @@ export function generateWorld(seed = 1) {
   const scatter = (type, n, ok) => {
     for (let placed = 0, tries = 0; placed < n && tries < n * 50; tries++) {
       const x = r.int(60, MAP - 60); const y = r.int(60, MAP - 60);
-      const s = resourceRadius(type, y);
+      const s = resourceRadius(type, x, y);
       if (!ok(x, y) || !free(x, y, s)) continue;
       add(type, x, y, s);
       placed++;

@@ -11,17 +11,20 @@ import { resourceSprite, resourceKey, TREE, BUSH } from '#shared/world.js';
 import { spriteInfo, OUTLINE, PX } from '#shared/sprites.js';
 import * as A from './assets.js';
 import { animate, startSwing, weaponBox } from '#shared/pose.js';
-import { generateDecor } from '#shared/decor.js';
+import { generateDecor, generatePatches, DECOR_SIZE } from '#shared/decor.js';
 
 export { startSwing };
 
-// Everything drawn in code uses the art's own outline: same colour, same width.
+// Players are drawn in code with the classic line: the art's colour, the
+// original 5.5-unit width.
 const DARK = '#282828';
-const OUTLINE_W = OUTLINE;
+export const PLAYER_OUTLINE = 5.5;
+const OUTLINE_W = PLAYER_OUTLINE;
 // A warm, cosy palette: sunlit olive grass, cream snow, honey sand, soft teal water.
 export const PALETTE = {
-  grass: '#a9c763', snow: '#f6f1e6', sand: '#e2c27b', bank: '#dcb873', water: '#7fb3c2', waterDeep: '#72a7b8',
-  grid: 'rgba(74, 52, 26, 0.075)', edge: 'rgba(58, 36, 16, 0.32)',
+  grass: '#6f8955', patch: '#65784a', snow: '#f3eee2', snowPatch: '#e6e1d4', sand: '#d9bd78', sandPatch: '#cfb06b',
+  bank: '#94ac64', water: '#6cc4c4', shimmer: '#7fd0cf',
+  edge: 'rgba(40, 30, 16, 0.32)',
   friend: '#9ccc5e', foe: '#d9685a', barBack: '#3a2e26',
 };
 const GRASS = PALETTE.grass;
@@ -90,7 +93,6 @@ export class Renderer {
     this.ox = ox; this.oy = oy;
 
     this.drawGround(ox, oy, delta);
-    this.drawGrid(ox, oy);
     this.drawDecor(ox, oy);
 
     const objs = s.visibleObjects(ox, oy, this.viewW, this.viewH);
@@ -153,10 +155,12 @@ export class Renderer {
     this.waterMult += this.waterPlus * C.WAVE_SPEED * delta;
     if (this.waterMult >= C.WAVE_MAX) { this.waterMult = C.WAVE_MAX; this.waterPlus = -1; }
     else if (this.waterMult <= 1) { this.waterMult = 1; this.waterPlus = 1; }
+    this.drawPatches(ox, oy);
     band(C.RIVER_TOP - C.RIVER_PADDING, C.RIVER_BOTTOM + C.RIVER_PADDING, PALETTE.bank);
     const wave = (this.waterMult - 1) * 250;
     band(C.RIVER_TOP - wave, C.RIVER_BOTTOM + wave, WATER);
-    band(C.RIVER_TOP + 90, C.RIVER_BOTTOM - 90, PALETTE.waterDeep);
+    band(C.RIVER_TOP - wave, C.RIVER_TOP - wave + 26, PALETTE.shimmer);
+    band(C.RIVER_BOTTOM + wave - 26, C.RIVER_BOTTOM + wave, PALETTE.shimmer);
   }
 
   /** Grow the scenery for this world. */
@@ -164,6 +168,12 @@ export class Renderer {
     if (this.decorSeed === seed) return;
     this.decorSeed = seed;
     this.decor = new Map();
+    this.patches = new Map();
+    for (const p of generatePatches(seed)) {
+      const k = Math.floor(p.x / 800) * 100000 + Math.floor(p.y / 800);
+      if (!this.patches.has(k)) this.patches.set(k, []);
+      this.patches.get(k).push(p);
+    }
     for (const d of generateDecor(seed)) {
       const k = Math.floor(d.x / 400) * 100000 + Math.floor(d.y / 400);
       if (!this.decor.has(k)) this.decor.set(k, []);
@@ -180,12 +190,31 @@ export class Renderer {
         if (!cell) continue;
         for (const d of cell) {
           const img = A.decorSprite(d.key);
-          const { w, h } = spriteInfo(d.key);
+          if (!img) continue;
+          const w = DECOR_SIZE[d.key]; const h = w * (img.height / img.width);
           g.save();
           g.translate(d.x - ox, d.y - oy);
           g.rotate(d.rot);
           g.drawImage(img, -w / 2, -h / 2, w, h);
           g.restore();
+        }
+      }
+    }
+  }
+
+  /** Soft, darker patches of ground, grown from the seed like the scenery. */
+  drawPatches(ox, oy) {
+    if (!this.patches) return;
+    const g = this.g;
+    for (let cx = Math.floor((ox - 500) / 800); cx <= Math.floor((ox + this.viewW + 500) / 800); cx++) {
+      for (let cy = Math.floor((oy - 500) / 800); cy <= Math.floor((oy + this.viewH + 500) / 800); cy++) {
+        const cell = this.patches.get(cx * 100000 + cy);
+        if (!cell) continue;
+        for (const p of cell) {
+          g.fillStyle = p.y < C.SNOW_TOP ? PALETTE.snowPatch : p.y > C.DESERT_TOP ? PALETTE.sandPatch : PALETTE.patch;
+          g.beginPath();
+          for (const [dx, dy, r] of p.blobs) { g.moveTo(p.x + dx - ox + r, p.y + dy - oy); g.arc(p.x + dx - ox, p.y + dy - oy, r, 0, Math.PI * 2); }
+          g.fill();
         }
       }
     }
@@ -229,16 +258,20 @@ export class Renderer {
   }
 
   drawResource(o, now) {
-    const name = resourceSprite(o.type, o.y);
+    const name = resourceSprite(o.type, o.x, o.y);
     const img = A.worldSprite(name);
     if (!img) return;
-    const { w, h } = spriteInfo(resourceKey(o.type, o.y));
+    // Drawn to fit its radius: every tree is its own size.
+    const base = spriteInfo(resourceKey(o.type, o.x, o.y));
+    const k = o.scale / base.r;
+    const w = base.w * k; const h = base.h * k;
     this.g.drawImage(img, -w / 2, -h / 2, w, h);
-    if (o.type === TREE || (o.type === BUSH && name === 'bush_1')) {
+    if (name !== 'cactus' && (o.type === TREE || o.type === BUSH)) {
       const leaves = A.leafSprite(name);
       if (leaves) {
+        const lf = spriteInfo(`world/${name}_d`);
         this.g.rotate(Math.sin(now * 0.0006 + o.sid) * 0.05);
-        this.g.drawImage(leaves, -w / 2, -h / 2, w, h);
+        this.g.drawImage(leaves, -lf.w * k / 2, -lf.h * k / 2, lf.w * k, lf.h * k);
       }
     }
   }

@@ -218,20 +218,27 @@ section('Every sprite at its true size, every hitbox from its sprite');
   }
   eq(stale.join(', '), '', `the size table matches a fresh measurement of all ${files} sprites`);
 
-  const { scaleOf, NATURE } = await import('#shared/sprites.js');
+  const { isNature } = await import('#shared/sprites.js');
+  const { resourceScale, TREE: T, BUSH: B, ROCK: R, GOLD: G } = await import('#shared/world.js');
   const off = Object.entries({ ...MEASURED, ...DRAWN }).filter(([, m]) => m.outline !== undefined && Math.abs(m.outline * PX - OUTLINE) > 0.5);
   eq(off.map(([k, m]) => `${k} ${m.outline}px`).join(', '), '', `every sprite, drawn or painted, uses the same pen: ${OUTLINE} ± 0.5 world units at true size`);
-  eq(scaleOf('world/tree_1') * scaleOf('items/wood_wall'), NATURE, 'only nature is drawn larger than true size');
-  ok(OUTLINE * NATURE - OUTLINE < 1, 'nature\u2019s slightly larger size keeps its outline within a unit of everything else');
+  ok(isNature('world/tree_1') && !isNature('items/wood_wall'), 'only nature is drawn larger than true size');
+  const sizes = (type) => generateWorld(5).filter((o) => o.type === type && !/sakura|automn/.test(resourceKey(o.type, o.x, o.y))).map((o) => resourceScale(type, o.x, o.y));
+  const range = (type) => { const v = sizes(type); return [Math.min(...v), Math.max(...v)]; };
+  const [tLo, tHi] = range(T);
+  ok(tLo >= 1.2 && tHi <= 1.42 && tHi - tLo > 0.15, `trees are drawn big and each its own size (${tLo.toFixed(2)}×–${tHi.toFixed(2)}×)`);
+  ok(range(R)[0] >= 1.08 && range(G)[1] <= 1.18 && range(B)[1] <= 1.06, 'rocks and gold a little larger, bushes about true size');
   eq(OUTLINE, 4, 'which is the art’s 8 px pen at 0.5 world units per pixel');
   const render = readFileSync(new URL('../client/js/render.js', import.meta.url), 'utf8');
-  ok(render.includes('const OUTLINE_W = OUTLINE;'), 'and the player, drawn in code, uses the same outline');
+  ok(render.includes('export const PLAYER_OUTLINE = 5.5;') && render.includes('const OUTLINE_W = PLAYER_OUTLINE;'), 'the player, drawn in code, has the classic 5.5-unit outline');
 
   const placed = ITEMS.filter((it) => it.group.place);
   ok(placed.every((it) => it.scale === radiusOf(itemSpriteKey(it))), `all ${placed.length} buildings collide at their sprite’s silhouette`);
   ok(ANIMALS.every((a) => a.scale === radiusOf(animalSpriteKey(a))), `all ${ANIMALS.length} animals do too`);
   const world = generateWorld(3);
-  ok(world.every((o) => o.scale === radiusOf(resourceKey(o.type, o.y))), 'and every tree, bush, cactus, rock and gold ore');
+  ok(world.every((o) => Math.abs(o.scale - radiusOf(resourceKey(o.type, o.x, o.y)) * resourceScale(o.type, o.x, o.y)) < 0.01), 'and every tree, bush, cactus, rock and gold ore, at its own size');
+  const kinds = new Set(world.map((o) => resourceKey(o.type, o.x, o.y)));
+  ok(['world/sakuratree_1', 'world/automntree_1', 'world/sakurabush_1', 'world/darkstone_1', 'drawn/cactus'].every((k) => kinds.has(k)), 'with sakura and autumn trees, sakura bushes, dark stones and cacti in the mix');
 
   const g = emptyGame();
   const wall = ITEMS.find((it) => it.name === 'Wood Wall');

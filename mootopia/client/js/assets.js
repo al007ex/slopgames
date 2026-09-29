@@ -343,70 +343,8 @@ export const PAINTED = {
 };
 
 // ── ground decorations ───────────────────────────────────────────────────
-// Walk-over scenery. Same pen, no hitbox.
-
-function drawDaisy() {
-  const [c, g] = sheet('decor/daisy');
-  for (let i = 0; i < 8; i++) {
-    const a = i / 8 * Math.PI * 2;
-    blob(g, '#fbf6ea', ellipse(g, 128 + Math.cos(a) * 64, 128 + Math.sin(a) * 64, 44, 20, a));
-  }
-  blob(g, '#f2a93b', circle(g, 128, 128, 36));
-  shine(g, 118, 116, 12, 8, 0.35);
-  return c;
-}
-
-function drawPoppy() {
-  const [c, g] = sheet('decor/poppy');
-  for (let i = 0; i < 4; i++) {
-    const a = i / 4 * Math.PI * 2 + Math.PI / 4;
-    blob(g, '#e0574a', circle(g, 128 + Math.cos(a) * 48, 128 + Math.sin(a) * 48, 60));
-  }
-  blob(g, '#3b2a2a', circle(g, 128, 128, 26));
-  g.fillStyle = '#f0d58a';
-  for (let i = 0; i < 6; i++) { const a = i / 6 * Math.PI * 2; g.beginPath(); g.arc(128 + Math.cos(a) * 14, 128 + Math.sin(a) * 14, 5, 0, Math.PI * 2); g.fill(); }
-  return c;
-}
-
-function drawBluebells() {
-  const [c, g] = sheet('decor/bluebells');
-  blob(g, '#7fae55', ellipse(g, 80, 176, 46, 22, -0.5));
-  blob(g, '#7fae55', ellipse(g, 180, 172, 44, 20, 0.5));
-  for (const [x, y] of [[92, 96], [166, 104], [128, 164]]) {
-    blob(g, '#7d9be0', circle(g, x, y, 42));
-    blob(g, '#9db6ee', circle(g, x, y, 18));
-  }
-  return c;
-}
-
-function drawTuft(key, blade, tip) {
-  const [c, g] = sheet(key);
-  const blades = [[-1.05, 96], [0, 124], [1.05, 94]];
-  for (const [a, len] of blades) {
-    blob(g, blade, () => {
-      const bx = 128 + Math.sin(a) * 34; const by = 200;
-      const tx = 128 + Math.sin(a) * len; const ty = 200 - Math.cos(a) * len * 1.15;
-      g.moveTo(bx - 22, by); g.quadraticCurveTo(bx - 18, (by + ty) / 2, tx, ty); g.quadraticCurveTo(bx + 18, (by + ty) / 2, bx + 22, by); g.closePath();
-    });
-  }
-  if (tip) for (const [a, len] of blades) { g.fillStyle = tip; g.beginPath(); g.arc(128 + Math.sin(a) * len, 200 - Math.cos(a) * len * 1.15, 8, 0, Math.PI * 2); g.fill(); }
-  return c;
-}
-const drawGrassTuft = () => drawTuft('decor/tuft', '#8fb84f');
-const drawDryTuft = () => drawTuft('decor/drytuft', '#cfae63', '#e8cf8e');
-
-function drawPebbles(key, tones) {
-  const [c, g] = sheet(key);
-  const stones = [[96, 110, 58, 46, 0.3], [168, 150, 44, 36, -0.4], [112, 180, 30, 24, 0.8]];
-  stones.forEach(([x, y, rx, ry, rot], i) => {
-    blob(g, tones[i % tones.length], ellipse(g, x, y, rx, ry, rot));
-    shine(g, x - rx * 0.3, y - ry * 0.35, rx * 0.35, ry * 0.25, 0.3);
-  });
-  return c;
-}
-const drawPebblesGrey = () => drawPebbles('decor/pebbles', ['#b7b2a8', '#a39d92', '#c7c2b8']);
-const drawPebblesSand = () => drawPebbles('decor/pebbles_sand', ['#d8c08e', '#c9ae7a', '#e4d0a4']);
-const drawPebblesDark = () => drawPebbles('decor/pebbles_dark', ['#8d8a96', '#7c7985', '#9a97a3']);
+// The owner's decoration sprites load from img/decor (and the skull from
+// img/animals). Lily pads for the river are painted here.
 
 function drawLilypads(bud) {
   const [c, g] = sheet(bud ? 'decor/lilybud' : 'decor/lilypads');
@@ -423,43 +361,10 @@ function drawLilypads(bud) {
   return c;
 }
 
-function drawHayBale() {
-  const [c, g] = sheet('decor/hay');
-  const bale = () => g.roundRect(34, 70, 188, 116, 26);
-  halo(g, bale);
-  blob(g, '#e3be5f', bale);
-  strokes(g, 'rgba(150, 110, 40, 0.45)', 5, [[60, 96, 196, 96], [56, 128, 200, 128], [60, 160, 196, 160]]);
-  strokes(g, '#9a6a3a', 9, [[92, 72, 92, 184], [164, 72, 164, 184]]);
-  shine(g, 90, 88, 40, 8, 0.3);
-  return c;
+export const DECOR_PAINTERS = { 'decor/lilypads': () => drawLilypads(false), 'decor/lilybud': () => drawLilypads(true) };
+
+export function decorSprite(key) {
+  if (DECOR_PAINTERS[key]) return derive(key, DECOR_PAINTERS[key]);
+  return ready(load(`img/${key}.png`));
 }
-
-function drawIcePatch() {
-  const [c, g] = sheet('decor/ice');
-  const shape = () => { g.moveTo(52, 130); g.bezierCurveTo(46, 70, 150, 40, 200, 86); g.bezierCurveTo(236, 120, 214, 196, 150, 204); g.bezierCurveTo(90, 212, 56, 180, 52, 130); g.closePath(); };
-  blob(g, '#cfe6ef', shape);
-  shine(g, 110, 100, 40, 12, 0.6);
-  shine(g, 168, 158, 22, 7, 0.5);
-  return c;
-}
-
-function drawDesertBloom() {
-  const [c, g] = sheet('decor/desertbloom');
-  blob(g, '#88a95a', ellipse(g, 128, 150, 70, 40));
-  for (let i = 0; i < 6; i++) {
-    const a = i / 6 * Math.PI * 2;
-    blob(g, '#ec8fb0', ellipse(g, 128 + Math.cos(a) * 36, 118 + Math.sin(a) * 30, 30, 18, a));
-  }
-  blob(g, '#fbd46b', circle(g, 128, 118, 20));
-  return c;
-}
-
-export const DECOR_PAINTERS = {
-  'decor/daisy': drawDaisy, 'decor/poppy': drawPoppy, 'decor/bluebells': drawBluebells, 'decor/tuft': drawGrassTuft,
-  'decor/drytuft': drawDryTuft, 'decor/pebbles': drawPebblesGrey, 'decor/pebbles_sand': drawPebblesSand, 'decor/pebbles_dark': drawPebblesDark,
-  'decor/lilypads': () => drawLilypads(false), 'decor/lilybud': () => drawLilypads(true), 'decor/hay': drawHayBale, 'decor/ice': drawIcePatch,
-  'decor/desertbloom': drawDesertBloom,
-};
-
-export const decorSprite = (key) => derive(key, DECOR_PAINTERS[key]);
 Object.assign(PAINTED, DECOR_PAINTERS);

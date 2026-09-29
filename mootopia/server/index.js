@@ -19,7 +19,10 @@ export function startServer({ port = 3600, host, log = console.log, seed, maxPer
   const game = new Game({ seed, log });
   const botManager = new Bots(game, bots);
   const perIp = new Map();
-  const timing = { ticks: 0, total: 0, max: 0 };
+  // Tick durations: running average and worst, plus the last 900 for percentiles.
+  const timing = { ticks: 0, total: 0, max: 0, recent: [],
+    reset() { this.ticks = 0; this.total = 0; this.max = 0; this.recent = []; },
+    percentile(q) { const v = [...this.recent].sort((a, b) => a - b); return v.length ? v[Math.min(v.length - 1, Math.floor(v.length * q))] : 0; } };
 
   const server = http.createServer((req, res) => {
     const url = new URL(req.url, 'http://x');
@@ -29,7 +32,7 @@ export function startServer({ port = 3600, host, log = console.log, seed, maxPer
       res.writeHead(200, { 'content-type': 'application/json', 'cache-control': 'no-store' });
       res.end(JSON.stringify({ ok: true, online: humans.length, playing: humans.filter((x) => x.alive).length, bots: game.players.size - humans.length,
         animals: game.animals.filter((a) => a.alive).length, objects: game.objects.list.length,
-        avgMs: timing.ticks ? +(timing.total / timing.ticks).toFixed(2) : 0, maxMs: +timing.max.toFixed(2) }));
+        avgMs: timing.ticks ? +(timing.total / timing.ticks).toFixed(2) : 0, p99Ms: +timing.percentile(0.99).toFixed(2), maxMs: +timing.max.toFixed(2) }));
       return;
     }
     if (p === '/' || p === '/index.html') p = '/client/index.html';
@@ -95,6 +98,7 @@ export function startServer({ port = 3600, host, log = console.log, seed, maxPer
       }
       const ms = performance.now() - t0;
       timing.ticks++; timing.total += ms; timing.max = Math.max(timing.max, ms);
+      timing.recent.push(ms); if (timing.recent.length > 900) timing.recent.shift();
       if (timing.ticks >= 900) { timing.ticks = 0; timing.total = 0; timing.max = 0; }
       next += TICK_MS;
       const wait = next - Date.now();
@@ -112,7 +116,7 @@ export function startServer({ port = 3600, host, log = console.log, seed, maxPer
     wss.close();
     server.close(() => resolve());
   });
-  return { server, game, bots: botManager, close };
+  return { server, game, bots: botManager, timing, close };
 }
 
 /** One decoded message from a client. Types are already fixed by the schema. */
