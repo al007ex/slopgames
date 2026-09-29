@@ -1,9 +1,8 @@
-// Slopgames portal — search/filter for the arcade grid, plus the embedded
-// launcher that wakes a sleeping game server and keeps it awake while you play.
+// Slopgames portal: the game rows, search, and the launcher that wakes a
+// sleeping game server and keeps it awake while you play.
 
 const launcher = document.querySelector('#launcher');
 const frame = document.querySelector('#game-frame');
-const kicker = document.querySelector('#launch-kicker');
 const title = document.querySelector('#launch-title');
 const text = document.querySelector('#launch-text');
 
@@ -12,7 +11,7 @@ let activeToken;
 let lastFocus;
 
 const names = Object.fromEntries(
-  [...document.querySelectorAll('.game-card')].map((card) => [card.dataset.slug, card.dataset.name]),
+  [...document.querySelectorAll('.tile')].map((tile) => [tile.dataset.slug, tile.dataset.name]),
 );
 
 /* ------------------------------------------------------------- launcher */
@@ -43,10 +42,10 @@ async function play(slug, source) {
     launcher.classList.add('open');
     launcher.setAttribute('aria-hidden', 'false');
     document.body.style.overflow = 'hidden';
-    kicker.textContent = 'WAKING THE SERVER';
-    title.textContent = `Starting ${names[slug] || slug}…`;
-    text.textContent = 'A game server is spinning up. This usually takes just a few seconds.';
+    title.textContent = `Loading ${names[slug] || slug}…`;
+    text.textContent = '';
   }
+  remember(slug);
 
   try {
     const res = await fetch(`/api/games/${slug}/launch`, { method: 'POST' });
@@ -71,17 +70,17 @@ async function play(slug, source) {
     const message = error.message || 'The game server is unavailable.';
     if (!overlay) return window.alert(message);
     launcher.classList.remove('playing');
-    kicker.textContent = 'UNABLE TO START';
     title.textContent = 'Try again in a moment';
     text.textContent = message;
   }
 }
 
-document.querySelectorAll('[data-launch]').forEach((el) => {
-  el.addEventListener('click', (event) => {
-    event.preventDefault();
-    play(el.dataset.launch, el);
-  });
+// Delegated, so tiles added later (continue playing, reordered picks) launch too.
+document.addEventListener('click', (event) => {
+  const el = event.target.closest('[data-launch]');
+  if (!el) return;
+  event.preventDefault();
+  play(el.dataset.launch, el);
 });
 document.querySelectorAll('.close').forEach((el) => el.addEventListener('click', closeLauncher));
 document.querySelector('#full-screen')?.addEventListener('click', () => {
@@ -95,29 +94,88 @@ window.addEventListener('beforeunload', closeLauncher);
 // cache exactly as it was left — with the "Starting…" card still up.
 window.addEventListener('pageshow', (event) => { if (event.persisted) closeLauncher(); });
 
-/* -------------------------------------------------------- search + tags */
-const cards = [...document.querySelectorAll('.game-card')];
+/* ------------------------------------------------ what you've played */
+const store = {
+  get(key, fallback) { try { return JSON.parse(localStorage.getItem(key)) ?? fallback; } catch { return fallback; } },
+  set(key, value) { try { localStorage.setItem(key, JSON.stringify(value)); } catch { /* private mode */ } },
+};
+
+function remember(slug) {
+  const recent = store.get('sg_recent', []).filter((s) => s !== slug);
+  recent.unshift(slug);
+  store.set('sg_recent', recent.slice(0, 12));
+  const plays = store.get('sg_plays', {});
+  plays[slug] = (plays[slug] || 0) + 1;
+  store.set('sg_plays', plays);
+}
+
+const source = Object.fromEntries([...document.querySelectorAll('#featured .tile')].map((tile) => [tile.dataset.slug, tile]));
+function copyTile(slug, size) {
+  const tile = source[slug]?.cloneNode(true);
+  if (!tile) return null;
+  tile.className = `tile ${size}`;
+  tile.querySelector('img')?.setAttribute('loading', 'eager');
+  return tile;
+}
+
+function renderContinue() {
+  const row = document.querySelector('#continue');
+  const recent = store.get('sg_recent', []).filter((slug) => source[slug]);
+  if (!row || !recent.length) return;
+  const strip = row.querySelector('.strip');
+  strip.replaceChildren(...recent.map((slug) => copyTile(slug, 'mini')));
+  row.hidden = false;
+}
+
+// Top picks lean towards what you play: games that share a category with
+// your favourites come first, anything new next, the rest after.
+function renderPicks(live = {}) {
+  const box = document.querySelector('.picks');
+  const plays = store.get('sg_plays', {});
+  if (!box || (!Object.keys(plays).length && !Object.keys(live).length)) return;
+  const liked = {};
+  for (const [slug, n] of Object.entries(plays)) for (const tag of source[slug]?.dataset.tags.split(',') || []) liked[tag] = (liked[tag] || 0) + n;
+  const order = Object.keys(source);
+  const score = (slug) => {
+    const tags = source[slug].dataset.tags.split(',');
+    return tags.reduce((sum, tag) => sum + (liked[tag] || 0), 0) * 0.3
+      + (source[slug].querySelector('.tile-badge.new') ? 2 : 0)
+      + Math.min(3, live[slug] || 0)
+      - order.indexOf(slug) * 0.01;
+  };
+  const count = box.children.length;
+  const picked = [...order].sort((a, b) => score(b) - score(a)).slice(0, count);
+  box.replaceChildren(...picked.map((slug, i) => copyTile(slug, i === 0 || i === count - 1 ? 'big' : 'small')));
+}
+
+renderContinue();
+renderPicks();
+
+/* ------------------------------------------------------ search + categories */
+const rows = [...document.querySelectorAll('main > .row:not(#results)')];
+const results = document.querySelector('#results');
+const resultsTitle = document.querySelector('#results-title');
+const resultTiles = [...document.querySelectorAll('#results .tile')];
 const search = document.querySelector('#search');
 const chips = [...document.querySelectorAll('.chip')];
 const empty = document.querySelector('#no-results');
-const countLabel = document.querySelector('#result-count');
 let activeTag = 'all';
 
 function applyFilters() {
   const query = (search?.value || '').trim().toLowerCase();
+  const filtering = Boolean(query) || activeTag !== 'all';
+  for (const row of rows) row.hidden = filtering || (row.id === 'continue' && !row.querySelector('.tile'));
+  results.hidden = !filtering;
+  if (!filtering) return;
   let shown = 0;
-
-  for (const card of cards) {
-    const haystack = `${card.dataset.name} ${card.dataset.tags} ${card.dataset.blurb || ''}`.toLowerCase();
-    const matchesTag = activeTag === 'all' || card.dataset.tags.split(',').includes(activeTag);
-    const matchesQuery = !query || haystack.includes(query);
-    const visible = matchesTag && matchesQuery;
-    card.hidden = !visible;
-    if (visible) shown += 1;
+  for (const tile of resultTiles) {
+    const matchesTag = activeTag === 'all' || tile.dataset.tags.split(',').includes(activeTag);
+    const matchesQuery = !query || `${tile.dataset.name} ${tile.dataset.tags}`.toLowerCase().includes(query);
+    tile.hidden = !(matchesTag && matchesQuery);
+    if (!tile.hidden) shown += 1;
   }
-
-  if (empty) empty.hidden = shown > 0;
-  if (countLabel) countLabel.textContent = `${String(shown).padStart(2, '0')} ${shown === 1 ? 'GAME' : 'GAMES'}`;
+  resultsTitle.textContent = query ? `Results for “${search.value.trim()}”` : `${activeTag[0].toUpperCase()}${activeTag.slice(1)} games`;
+  empty.hidden = shown > 0;
 }
 
 search?.addEventListener('input', applyFilters);
@@ -135,14 +193,13 @@ async function refreshPresence() {
     const res = await fetch('/api/games');
     if (!res.ok) return;
     const { games } = await res.json();
-    for (const game of games) {
-      const card = cards.find((item) => item.dataset.slug === game.slug);
-      const badge = card?.querySelector('.badge.live');
-      if (!badge) continue;
-      // Only advertise presence when somebody is actually in there — a running
-      // server with nobody playing is not a reason to shout.
-      badge.hidden = !(game.state === 'running' && game.players > 0);
-      badge.querySelector('b').textContent = game.players === 1 ? '1 PLAYING' : `${game.players} PLAYING`;
+    const live = {};
+    for (const game of games) if (game.state === 'running' && game.players > 0) live[game.slug] = game.players;
+    for (const tile of document.querySelectorAll('.tile')) {
+      const badge = tile.querySelector('.tile-live');
+      const n = live[tile.dataset.slug] || 0;
+      badge.hidden = !n;
+      badge.querySelector('b').textContent = `${n} playing`;
     }
   } catch { /* Presence is decorative; a failed poll changes nothing. */ }
 }
