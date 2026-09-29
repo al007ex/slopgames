@@ -7,8 +7,13 @@ export const ok = (cond, label, extra = '') => {
   else { state.failed++; console.log(`  ✗ ${label}${extra ? `  — ${extra}` : ''}`); }
 };
 
+const show = (v) => {
+  if (v && typeof v === 'object') return v.constructor?.name ? `${v.constructor.name}${v.sid !== undefined ? ` #${v.sid}` : ''}` : '[object]';
+  return JSON.stringify(v);
+};
+
 export const eq = (actual, expected, label) =>
-  ok(actual === expected, label, `expected ${JSON.stringify(expected)}, got ${JSON.stringify(actual)}`);
+  ok(actual === expected, label, `expected ${show(expected)}, got ${show(actual)}`);
 
 export const near = (actual, expected, tolerance, label) =>
   ok(Math.abs(actual - expected) <= tolerance, label, `expected ~${expected}, got ${actual}`);
