@@ -5,6 +5,20 @@ and has its own setup instructions.
 
 ## Games
 
+### Mootopia
+
+`mootopia/` is a cosy top-down gather, build and fight `.io` game: chop,
+mine, age up, build a windmill village and defend it, with clans, hats,
+animals, a boss bear and smooth, predicted PvP. Bots keep a quiet server busy.
+
+```bash
+cd mootopia
+npm install
+npm start
+```
+
+Then open <http://localhost:3600>.
+
 ### Stormwall
 
 `stormwall/` is a 100-player build-and-shoot battle royale: drop from a blimp,
