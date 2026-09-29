@@ -20,6 +20,19 @@ const origin = process.env.SITE_ORIGIN || 'https://slopgames.al007ex.com';
 // One entry per game. `dir`, `port` and `health` drive the launcher; the rest is
 // presentation, so adding a game to the arcade means adding an object here.
 const games = {
+  mootopia: {
+    name: 'Mootopia',
+    dir: path.join(root, 'mootopia'),
+    port: 3206,
+    health: '/health',
+    description: 'A cosy top-down gather, build and fight .io game.',
+    blurb: 'Chop trees, mine stone and gold, age up and build a windmill village, then defend it. Clans, hats, a boss bear and fast, smooth PvP, with bots keeping the fields busy.',
+    art: '/assets/art/mootopia.jpg',
+    tags: ['io', 'building', 'pvp', 'multiplayer'],
+    players: 'LIVE MULTIPLAYER',
+    featured: true,
+    state: 'stopped', process: null, sessions: new Map(), lastActivity: 0, startPromise: null,
+  },
   stormwall: {
     name: 'Stormwall',
     dir: path.join(root, 'stormwall'),
@@ -30,7 +43,6 @@ const games = {
     art: '/assets/art/stormwall.jpg',
     tags: ['battle royale', 'building', 'shooter', 'multiplayer'],
     players: '100-PLAYER BATTLE ROYALE',
-    featured: true,
     state: 'stopped', process: null, sessions: new Map(), lastActivity: 0, startPromise: null,
   },
   glowworm: {
