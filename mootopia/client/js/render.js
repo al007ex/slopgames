@@ -60,7 +60,7 @@ export class Renderer {
   }
 
   resize() {
-    const dpr = Math.min(window.devicePixelRatio || 1, 2);
+    const dpr = this.sharp === false ? 1 : Math.min(window.devicePixelRatio || 1, 2);
     const w = window.innerWidth; const h = window.innerHeight;
     this.canvas.width = Math.round(w * dpr);
     this.canvas.height = Math.round(h * dpr);
@@ -446,7 +446,7 @@ export class Renderer {
         const friendly = p.sid === s.me || (me && p.clan && p.clan === me.clan);
         this.healthBar(x, y + C.PLAYER_SCALE, p.health / p.maxHealth, friendly ? PALETTE.friend : PALETTE.foe);
       }
-      if (p.chat && now - p.chat.at < C.CHAT_SHOW) {
+      if (this.showBubbles !== false && p.chat && now - p.chat.at < C.CHAT_SHOW) {
         g.font = `32px ${FONT}`;
         const tw = g.measureText(p.chat.text).width + 34;
         const cy = ny - 60;
@@ -457,7 +457,7 @@ export class Renderer {
     }
     for (const t of s.texts) {
       t.life -= delta;
-      if (t.life <= 0) continue;
+      if (t.life <= 0 || this.showDamage === false) continue;
       t.y -= t.speed * delta;
       if (t.grow) { t.scale += 0.7 * delta * 0.1; if (t.scale >= t.max) { t.scale = t.max; t.grow = false; } }
       else t.scale = Math.max(t.start, t.scale - 0.7 * delta * 0.1);

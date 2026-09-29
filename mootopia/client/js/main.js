@@ -65,12 +65,13 @@ const cellKey = (x, y) => Math.floor(x / OBJ_CELL) * 100000 + Math.floor(y / OBJ
 class App {
   constructor() {
     this.state = new State();
+    this.settings = loadSettings();
     this.renderer = new Renderer($('game'));
     this.predictor = new Predictor(this);
     this.clock = new Clock();
     this.predictedSwingAt = 0;
     this.nextLocalSwing = 0;
-    this.renderer.showHitboxes = new URLSearchParams(location.search).has('hitboxes');
+    this.applySettings();
     this.ui = new UI(this);
     this.writer = new Writer(256);
     this.me = this.freshMe();
@@ -98,6 +99,21 @@ class App {
     requestAnimationFrame(this.loop);
     // Browsers throttle animation frames in hidden panes; keep the world moving anyway.
     setInterval(() => { if (performance.now() - this.lastFrame > 200) this.frame(performance.now()); }, 100);
+  }
+
+  setSetting(key, value) {
+    this.settings[key] = value;
+    try { localStorage.setItem('moo.settings', JSON.stringify(this.settings)); } catch {}
+    this.applySettings();
+  }
+
+  applySettings() {
+    const r = this.renderer;
+    r.showHitboxes = this.settings.hitboxes || new URLSearchParams(location.search).has('hitboxes');
+    r.showDamage = this.settings.damage;
+    r.showBubbles = this.settings.bubbles;
+    r.sharp = this.settings.sharp;
+    r.resize();
   }
 
   freshMe() {
@@ -537,6 +553,11 @@ class App {
     }
     return this.menuView;
   }
+}
+
+function loadSettings() {
+  const base = { damage: true, bubbles: true, sharp: true, hitboxes: false };
+  try { return { ...base, ...JSON.parse(localStorage.getItem('moo.settings') || '{}') }; } catch { return base; }
 }
 
 window.app = new App();

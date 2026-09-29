@@ -18,6 +18,8 @@ export class UI {
     this.pendingIcons = [];
     $('shop-btn').onclick = () => this.toggle('shop');
     $('clan-btn').onclick = () => this.toggle('clans');
+    $('settings-btn').onclick = () => this.toggle('settings');
+    loadUiArt();
     for (const b of document.querySelectorAll('[data-close]')) b.onclick = () => { $(b.dataset.close).hidden = true; };
     $('clan-make').onclick = () => { const n = $('clan-name').value.trim(); if (n) { app.send('clanCreate', n); $('clan-name').value = ''; } };
     $('clan-name').addEventListener('keydown', (e) => { e.stopPropagation(); if (e.key === 'Enter') $('clan-make').click(); });
@@ -27,13 +29,38 @@ export class UI {
   toggle(id) {
     const el = $(id);
     const open = el.hidden;
-    for (const w of ['shop', 'clans']) $(w).hidden = true;
+    for (const w of ['shop', 'clans', 'settings']) $(w).hidden = true;
     el.hidden = !open;
     if (open && id === 'shop') this.renderShop();
     if (open && id === 'clans') this.renderClans();
+    if (open && id === 'settings') this.renderSettings();
   }
 
-  closeWindows() { $('shop').hidden = true; $('clans').hidden = true; }
+  closeWindows() { for (const w of ['shop', 'clans', 'settings']) $(w).hidden = true; }
+
+  // ── settings ──────────────────────────────────────────────────────────
+  renderSettings() {
+    const app = this.app;
+    const list = $('settings-list');
+    list.innerHTML = '';
+    const rows = [
+      ['damage', 'Damage numbers', 'Show how hard each hit landed.'],
+      ['bubbles', 'Chat bubbles', 'Show what people say above their heads.'],
+      ['sharp', 'Sharp graphics', 'Draw at full screen resolution. Turn off if the game feels slow.'],
+      ['hitboxes', 'Show hitboxes', 'Outline everything you can bump into.'],
+    ];
+    for (const [key, label, hint] of rows) {
+      const row = document.createElement('label');
+      row.className = 'setting';
+      row.innerHTML = `<span>${esc(label)}<small>${esc(hint)}</small></span>`;
+      const box = document.createElement('input');
+      box.type = 'checkbox';
+      box.checked = !!app.settings[key];
+      box.onchange = () => app.setSetting(key, box.checked);
+      row.appendChild(box);
+      list.appendChild(row);
+    }
+  }
 
   // ── icons ─────────────────────────────────────────────────────────────
   icon(kind, id, size = 116) {
@@ -178,6 +205,7 @@ export class UI {
 
   // ── leaderboard ───────────────────────────────────────────────────────
   setLeaders(flat) {
+    requestAnimationFrame(() => document.documentElement.style.setProperty('--board-h', `${$('leaderboard').offsetHeight}px`));
     const ol = $('leaders');
     ol.innerHTML = '';
     for (let i = 0; i < flat.length; i += 3) {
@@ -303,6 +331,20 @@ export class UI {
   nextRequest() {
     const r = this.app.requests[0];
     if (r) this.showRequest(r.sid, r.name); else $('request').hidden = true;
+  }
+}
+
+// The owner's UI art. Each file that exists switches its piece of the HUD
+// over from the drawn stand-in (see style.css: body.art-<name>).
+const UI_ART = ['shop', 'clan', 'settings', 'slot', 'minimap'];
+function loadUiArt() {
+  for (const name of UI_ART) {
+    const img = new Image();
+    img.onload = () => {
+      document.documentElement.style.setProperty(`--art-${name}`, `url(img/ui/${name}.png)`);
+      document.body.classList.add(`art-${name}`);
+    };
+    img.src = `img/ui/${name}.png`;
   }
 }
 

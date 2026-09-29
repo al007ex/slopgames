@@ -40,35 +40,40 @@
   <!-- DEATH -->
   <div id="died" class="screen" hidden><div class="died-text">YOU DIED</div></div>
 
-  <!-- HUD -->
+  <!-- HUD — laid out after the owner's mock-up -->
   <div id="hud" hidden>
-    <div id="top-left">
-      <button id="shop-btn" class="round-btn" type="button" title="Hat shop"><span class="icon-hat"></span></button>
-      <button id="clan-btn" class="round-btn" type="button" title="Clans"><span class="icon-flag"></span></button>
-      <div id="kills" class="pill"><img src="img/icons/skull.png" alt="" /><span>0</span></div>
+    <div id="top-right">
+      <div id="buttons">
+        <button id="settings-btn" class="icon-btn" type="button" title="Settings" data-art="settings"><span class="glyph glyph-gear"></span></button>
+        <button id="shop-btn" class="icon-btn" type="button" title="Shop" data-art="shop"><span class="glyph glyph-shop"></span></button>
+        <button id="clan-btn" class="icon-btn" type="button" title="Clans" data-art="clan"><span class="glyph glyph-clan"></span></button>
+      </div>
+      <div id="leaderboard" class="panel">
+        <div class="panel-title">Leaderboard</div>
+        <ol id="leaders"></ol>
+      </div>
     </div>
+    <div id="kills" class="pill"><span>0</span><img src="img/icons/skull.png" alt="kills" /></div>
 
     <div id="upgrades" hidden>
       <div id="upgrade-label">Select an upgrade</div>
       <div id="upgrade-list"></div>
     </div>
 
-    <div id="leaderboard" class="panel">
-      <div class="panel-title">Leaderboard</div>
-      <ol id="leaders"></ol>
+    <div id="bottom-left">
+      <div class="res pill" data-res="3"><img src="img/resources/gold_ico.png" alt="gold" /><span>0</span></div>
+      <div id="minimap-frame"><canvas id="minimap" width="260" height="260"></canvas></div>
     </div>
 
-    <canvas id="minimap" width="260" height="260"></canvas>
-
     <div id="resources">
-      <div class="res" data-res="1"><span>0</span><img src="img/resources/food_ico.png" alt="food" /></div>
-      <div class="res" data-res="0"><span>0</span><img src="img/resources/wood_ico.png" alt="wood" /></div>
-      <div class="res" data-res="2"><span>0</span><img src="img/resources/stone_ico.png" alt="stone" /></div>
-      <div class="res" data-res="3"><span>0</span><img src="img/resources/gold_ico.png" alt="gold" /></div>
+      <div class="res pill" data-res="1"><span>0</span><img src="img/resources/food_ico.png" alt="food" /></div>
+      <div class="res pill" data-res="0"><span>0</span><img src="img/resources/wood_ico.png" alt="wood" /></div>
+      <div class="res pill" data-res="2"><span>0</span><img src="img/resources/stone_ico.png" alt="stone" /></div>
     </div>
 
     <div id="bottom">
-      <div id="age"><div id="age-fill"></div><div id="age-text">AGE 1</div></div>
+      <div id="age-text">AGE 1</div>
+      <div id="age"><div id="age-fill"></div></div>
       <div id="hotbar"></div>
     </div>
 
@@ -90,6 +95,11 @@
         </div>
         <div id="clan-list"></div>
       </div>
+    </div>
+
+    <div id="settings" class="window" hidden>
+      <div class="window-head">Settings <button class="close" type="button" data-close="settings">✕</button></div>
+      <div class="window-body" id="settings-list"></div>
     </div>
   </div>
 
