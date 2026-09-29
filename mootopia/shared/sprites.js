@@ -26,7 +26,28 @@ export const DRAWN = {
   'drawn/musket': { w: 410, h: 410, outline: 8, r: 76.34, cx: 186.2, cy: 205.6 },
   'drawn/grabby': { w: 260, h: 420, outline: 8, r: 65.25, cx: 129.5, cy: 231 },
   'drawn/bullet': { w: 64, h: 64, outline: 8, r: 17.73, cx: 31.5, cy: 31.5 },
+  // Ground decorations: walk-over scenery, no hitbox. Outlines measured like the rest.
+  'decor/daisy': { w: 120, h: 120, outline: 7.07 },
+  'decor/poppy': { w: 110, h: 110, outline: 8.49 },
+  'decor/bluebells': { w: 120, h: 120, outline: 8 },
+  'decor/tuft': { w: 110, h: 110, outline: 8.49 },
+  'decor/drytuft': { w: 110, h: 110, outline: 8.49 },
+  'decor/pebbles': { w: 120, h: 120, outline: 8 },
+  'decor/pebbles_sand': { w: 120, h: 120, outline: 8 },
+  'decor/pebbles_dark': { w: 120, h: 120, outline: 8 },
+  'decor/lilypads': { w: 190, h: 190, outline: 8 },
+  'decor/lilybud': { w: 190, h: 190, outline: 8 },
+  'decor/hay': { w: 190, h: 190, outline: 8 },
+  'decor/ice': { w: 200, h: 200, outline: 8 },
+  'decor/desertbloom': { w: 120, h: 120, outline: 8 },
 };
+
+// Nature (trees, bushes, cacti, rocks, gold) is drawn a little larger than
+// true size, so the world feels fuller. At 1.15× its outline is 4.6 units
+// against everyone else's 4 — under a pixel on any screen.
+export const NATURE = 1.15;
+export const isNature = (key) => key.startsWith('world/') || key === 'drawn/cactus';
+export const scaleOf = (key) => (isNature(key) ? NATURE : 1);
 
 const table = (key) => MEASURED[key] || DRAWN[key];
 
@@ -34,11 +55,12 @@ const table = (key) => MEASURED[key] || DRAWN[key];
 export function spriteInfo(key) {
   const m = table(key);
   if (!m) throw new Error(`no size for sprite ${key}`);
+  const k = PX * scaleOf(key);
   return {
-    w: m.w * PX, h: m.h * PX,
-    r: m.r !== undefined ? +(m.r * PX).toFixed(2) : undefined,
-    dx: m.cx !== undefined ? (m.cx - m.w / 2) * PX : 0,
-    dy: m.cy !== undefined ? (m.cy - m.h / 2) * PX : 0,
+    w: m.w * k, h: m.h * k,
+    r: m.r !== undefined ? +(m.r * k).toFixed(2) : undefined,
+    dx: m.cx !== undefined ? (m.cx - m.w / 2) * k : 0,
+    dy: m.cy !== undefined ? (m.cy - m.h / 2) * k : 0,
   };
 }
 

@@ -14,7 +14,7 @@ section('Binary protocol');
 {
   const msgs = [
     ['welcome', 12, 14400, 20160101],
-    ['tick', [1, 3000, 7000, 1.5, -1, 0, 2, 0, 1004, 0, 1, 2, 3100, 7100, -2.25, 4, 3, 0, 5, 0, 1, 0], [9, 4, 3200, 7200, 0.5, 300]],
+    ['tick', 123456, [1, 3000, 7000, 1.5, -1, 0, 2, 0, 1004, 0, 1, 2, 3100, 7100, -2.25, 4, 3, 0, 5, 0, 1, 0], [9, 4, 3200, 7200, 0.5, 300]],
     ['objs', [70000, 100, 200, 3.1, 175, 0, -1, 0, 70001, 110, 210, -1, 50, -1, 3, 12]],
     ['info', 3, 'Björn', 4, 100, 750, 1],
     ['leaders', [1, 'alpha', 123456, 2, 'beta', 99]],
@@ -31,14 +31,17 @@ section('Binary protocol');
   eq(JSON.stringify(back[0]), JSON.stringify(msgs[0]), 'plain integers round-trip exactly');
   eq(back[3][2], 'Björn', 'UTF-8 names survive');
   eq(JSON.stringify(back[4]), JSON.stringify(msgs[4]), 'flat records with strings round-trip');
-  near(back[1][1][3], 1.5, 1e-4, 'angles come back within 0.0001 rad');
-  near(back[1][1][14], -2.25, 1e-4, 'negative angles too');
-  eq(back[1][1][4], -1, 'signed fields keep their sign (no item held)');
+  eq(back[1][1], 123456, 'the server tick number rides along');
+  near(back[1][2][3], 1.5, 1e-4, 'angles come back within 0.0001 rad');
+  near(back[1][2][14], -2.25, 1e-4, 'negative angles too');
+  eq(back[1][2][4], -1, 'signed fields keep their sign (no item held)');
   eq(back[2][1][0], 70000, 'object ids go past 65535');
   eq(back[8][3], -20, 'heals are negative numbers on the wire');
 
-  const tickOnly = encode(SERVER_TABLE, [['tick', Array(11).fill(1), []]]);
-  ok(tickOnly.length <= 22, `a snapshot with one player is tiny (${tickOnly.length} bytes)`);
+  const tickOnly = encode(SERVER_TABLE, [['tick', 1, Array(11).fill(1), []]]);
+  ok(tickOnly.length <= 26, `a snapshot with one player is tiny (${tickOnly.length} bytes)`);
+  const me = decode(SERVER_TABLE, encode(SERVER_TABLE, [['me', 7, 1234.5678, 42.25, 0.123456, -0.5, 0.75, 1, 0]]))[0];
+  ok(Math.abs(me[2] - 1234.5678) < 1e-3 && Math.abs(me[4] - 0.123456) < 1e-6, 'your own position and velocity come back exactly enough to replay from');
 
   const move = decode(CLIENT_TABLE, encode(CLIENT_TABLE, [['move', null], ['move', Math.PI / 2], ['attack', 1, -1]]));
   eq(move[0][1], null, 'a stopped player sends a null direction');
@@ -141,7 +144,7 @@ section('What each player is sent');
   const objs = sent(p, 'objs').flatMap((m) => m[1]);
   ok(objs.includes(near1.sid) && !objs.includes(far1.sid), 'objects arrive once they are on screen, not before');
   const tick = sent(p, 'tick')[0];
-  const sids = []; for (let i = 0; i < tick[1].length; i += 11) sids.push(tick[1][i]);
+  const sids = []; for (let i = 0; i < tick[2].length; i += 11) sids.push(tick[2][i]);
   ok(sids.includes(p.sid) && sids.includes(other.sid) && !sids.includes(far2.sid), 'snapshots hold you and whoever is on your screen');
   ok(sent(p, 'info').some((m) => m[1] === other.sid), 'a newcomer on screen comes with a name card');
   drain(g); g.tick();
@@ -149,7 +152,7 @@ section('What each player is sent');
   g.removeObject(near1);
   ok(sent(p, 'rm').some((m) => m[1] === near1.sid), 'removing an object tells whoever had it');
   const outboxBytes = encode(SERVER_TABLE, [...p.outbox, ...sent(p, 'tick')]).length;
-  ok(outboxBytes < 200, `a quiet tick costs ${outboxBytes} bytes`);
+  ok(outboxBytes < 240, `a quiet tick costs ${outboxBytes} bytes`);
 }
 
 // ── over a real socket ──────────────────────────────────────────────────
@@ -173,7 +176,7 @@ section('Over a real socket');
   pb.x = pa.x + 300; pb.y = pa.y;
   await new Promise((r) => setTimeout(r, 400));
   const lastTick = [...a.got].reverse().find((m) => m[0] === 'tick');
-  const seen = []; for (let i = 0; i < lastTick[1].length; i += 11) seen.push(lastTick[1][i]);
+  const seen = []; for (let i = 0; i < lastTick[2].length; i += 11) seen.push(lastTick[2][i]);
   ok(seen.includes(pb.sid), 'Alpha sees Bravo walk into view');
   ok(a.got.some((m) => m[0] === 'info' && m[2] === 'Bravo'), 'with Bravo’s name');
   const res = await fetch('http://localhost:3693/health').then((r) => r.json());
@@ -215,8 +218,11 @@ section('Every sprite at its true size, every hitbox from its sprite');
   }
   eq(stale.join(', '), '', `the size table matches a fresh measurement of all ${files} sprites`);
 
+  const { scaleOf, NATURE } = await import('#shared/sprites.js');
   const off = Object.entries({ ...MEASURED, ...DRAWN }).filter(([, m]) => m.outline !== undefined && Math.abs(m.outline * PX - OUTLINE) > 0.5);
-  eq(off.map(([k, m]) => `${k} ${m.outline}px`).join(', '), '', `every outline, drawn or painted, is ${OUTLINE} ± 0.5 world units on screen`);
+  eq(off.map(([k, m]) => `${k} ${m.outline}px`).join(', '), '', `every sprite, drawn or painted, uses the same pen: ${OUTLINE} ± 0.5 world units at true size`);
+  eq(scaleOf('world/tree_1') * scaleOf('items/wood_wall'), NATURE, 'only nature is drawn larger than true size');
+  ok(OUTLINE * NATURE - OUTLINE < 1, 'nature\u2019s slightly larger size keeps its outline within a unit of everything else');
   eq(OUTLINE, 4, 'which is the art’s 8 px pen at 0.5 world units per pixel');
   const render = readFileSync(new URL('../client/js/render.js', import.meta.url), 'utf8');
   ok(render.includes('const OUTLINE_W = OUTLINE;'), 'and the player, drawn in code, uses the same outline');

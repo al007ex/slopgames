@@ -4,6 +4,7 @@ import * as C from '#shared/config.js';
 import { WEAPONS, ITEMS, PROJECTILES, START_ITEMS, START_WEAPONS, costOf, upgradeChoices } from '#shared/items.js';
 import { hatById } from '#shared/hats.js';
 import { dist, dirTo, angleDist } from '#shared/util.js';
+import { accelerate, travel, settle, speedMods } from '#shared/physics.js';
 
 const RES = C.RESOURCE_TYPES;
 const NO_HAT = {};
@@ -31,6 +32,20 @@ export class Player {
     this.chat = null;
     this.shameTimer = 0;
     this.shameCount = 0;
+    this.inputs = [];                // queued per-tick inputs: { seq, dir }
+    this.lastSeq = 0;                // the newest input used, echoed back for prediction
+  }
+
+  /** Queue one tick of input. At most a short backlog is kept, so latency never piles up. */
+  queueInput(seq, dir) {
+    this.inputs.push({ seq, dir });
+    if (this.inputs.length > 4) this.inputs.splice(0, this.inputs.length - 2);
+  }
+
+  /** Use the next queued input, if any; otherwise keep doing what you were doing. */
+  takeInput() {
+    const next = this.inputs.shift();
+    if (next) { this.moveDir = next.dir; this.lastSeq = next.seq; }
   }
 
   send(...msg) { if (!this.bot) this.outbox.push(msg); }
@@ -94,51 +109,32 @@ export class Player {
       if (!this.alive) return;
     }
 
-    if (this.slowMult < 1) this.slowMult = Math.min(1, this.slowMult + C.SLOW_RECOVER * delta);
-
-    // Accelerate towards the input direction.
     this.noMovTimer += delta;
     if (this.xVel || this.yVel) this.noMovTimer = 0;
-    if (this.lockMove) {
-      this.xVel = 0; this.yVel = 0;
-    } else {
-      let spd = (this.buildIndex >= 0 ? C.BUILD_SPEED : 1) * (this.weapon.spdMult || 1) * (this.hat.spdMult || 1) * this.slowMult;
-      if (this.y <= C.SNOW_TOP) spd *= C.SNOW_SPEED;
-      if (!this.zIndex && C.inRiver(this.y)) {
-        if (this.hat.waterImmune) { spd *= 0.75; this.xVel += C.WATER_CURRENT * (this.hat.currentMult ?? 0.4) * delta; }
-        else { spd *= C.WATER_SPEED; this.xVel += C.WATER_CURRENT * delta; }
-      }
-      if (this.moveDir !== null) {
-        this.xVel += Math.cos(this.moveDir) * C.PLAYER_SPEED * spd * delta;
-        this.yVel += Math.sin(this.moveDir) * C.PLAYER_SPEED * spd * delta;
-      }
-    }
 
-    // Move in up to four sub-steps, colliding with objects after each.
-    this.zIndex = 0; this.lockMove = false; this.healCol = 0;
-    const travel = Math.hypot(this.xVel, this.yVel) * delta;
-    const depth = Math.min(4, Math.max(1, Math.round(travel / 40)));
-    const step = 1 / depth;
+    // The same step the client predicts with (shared/physics.js).
+    accelerate(this, this.moveDir, delta, this.moveMods());
     const near = [];
-    for (let i = 0; i < depth; i++) {
-      this.x += this.xVel * delta * step;
-      this.y += this.yVel * delta * step;
+    travel(this, delta, (step) => {
       for (const o of game.objects.near(this.x, this.y, this.scale + 180, near)) {
         if (o.active) game.objects.collide(this, o, step, game);
-        if (!this.alive) return;
+        if (!this.alive) return false;
       }
-    }
+      return true;
+    });
+  }
+
+  moveMods() {
+    return {
+      spd: speedMods({ building: this.buildIndex >= 0, weaponSpd: this.weapon.spdMult || 1, hatSpd: this.hat.spdMult || 1 }),
+      waterImmune: !!this.hat.waterImmune, currentMult: this.hat.currentMult,
+    };
   }
 
   /** Friction, walls of the world and the swing — after player-vs-player pushes. */
   finish(delta) {
     if (!this.alive) return;
-    const f = Math.pow(C.DECEL, delta);
-    if (this.xVel) { this.xVel *= f; if (Math.abs(this.xVel) <= 0.01) this.xVel = 0; }
-    if (this.yVel) { this.yVel *= f; if (Math.abs(this.yVel) <= 0.01) this.yVel = 0; }
-    const s = this.scale;
-    this.x = Math.min(C.MAP - s, Math.max(s, this.x));
-    this.y = Math.min(C.MAP - s, Math.max(s, this.y));
+    settle(this, delta);
 
     if (this.buildIndex < 0) {
       const w = this.weapon;

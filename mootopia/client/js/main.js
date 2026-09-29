@@ -6,14 +6,16 @@ import { ANIMALS } from '#shared/animals.js';
 import { HATS } from '#shared/hats.js';
 import { generateWorld, TREE, ROCK } from '#shared/world.js';
 import { SERVER_TABLE, CLIENT_TABLE, encode, decode, Writer } from '#shared/protocol.js';
-import { lerpAngle } from '#shared/util.js';
+import { lerpAngle, angleDist, dirTo } from '#shared/util.js';
+import { swingTicks } from '#shared/physics.js';
+import { hatById as hatOf } from '#shared/hats.js';
+import { Predictor, Clock, remember, place } from './predict.js';
 import { Renderer, startSwing } from './render.js';
 import { UI } from './ui.js';
 import * as A from './assets.js';
 
 const $ = (id) => document.getElementById(id);
 const OBJ_CELL = 400;
-const INTERP_MS = 170;
 const AIM_MS = 50;
 
 class State {
@@ -64,6 +66,10 @@ class App {
   constructor() {
     this.state = new State();
     this.renderer = new Renderer($('game'));
+    this.predictor = new Predictor(this);
+    this.clock = new Clock();
+    this.predictedSwingAt = 0;
+    this.nextLocalSwing = 0;
     this.renderer.showHitboxes = new URLSearchParams(location.search).has('hitboxes');
     this.ui = new UI(this);
     this.writer = new Writer(256);
@@ -131,12 +137,14 @@ class App {
         s.me = m[0];
         this.seed = m[2];
         this.menuWorld = generateWorld(this.seed);
+        this.renderer.setSeed(this.seed);
         break;
       case 'spawned': {
         s.me = m[0];
         this.me = { ...this.freshMe(), weapons: m[2], items: m[1], hats: new Set(m[3]), hat: m[4], clan: this.me.clan, clanName: this.me.clanName,
           clanOwner: this.me.clanOwner, clanOwnerSid: this.me.clanOwnerSid, members: this.me.members, asked: this.me.asked };
         this.alive = true;
+        this.predictor.reset(0, 0);
         this.enterGame();
         this.ui.renderHotbar();
         this.ui.setAge(0, C.FIRST_XP, 1);
@@ -150,7 +158,8 @@ class App {
         Object.assign(p, { name, skin, health: hp, maxHealth: max });
         break;
       }
-      case 'tick': this.applyTick(m[0], m[1], now); break;
+      case 'tick': this.applyTick(m[0], m[1], m[2], now); break;
+      case 'me': if (this.alive) this.predictor.reconcile(...m); break;
       case 'objs': this.addObjects(m[0]); break;
       case 'rm': s.removeObject(m[0]); break;
       case 'wiggle': {
@@ -163,7 +172,14 @@ class App {
       case 'txt': this.floatText(m[0], m[1], m[2]); break;
       case 'swing': {
         const p = s.players.get(m[0]);
-        if (p) startSwing(p, m[1], WEAPONS[m[2]].speed);
+        if (!p) break;
+        if (m[0] === s.me && now - this.predictedSwingAt < 450 && p.animTime > 0) {
+          // Our own swing already started on the click; the server just settles hit or miss.
+          const was = p.dirPlus;
+          p.targetAngle = m[1] ? -C.HIT_ANGLE : -C.MISS_ANGLE;
+          p.ratio = Math.min(1, Math.max(0, was / p.targetAngle));
+          this.predictedSwingAt = 0;
+        } else startSwing(p, m[1], WEAPONS[m[2]].speed);
         break;
       }
       case 'slam': { const a = s.animals.get(m[0]); if (a) { a.animTime = a.animSpeed = 500; a.targetAngle = -0.5; a.ratio = 0; a.phase = 0; } break; }
@@ -240,13 +256,14 @@ class App {
     return p;
   }
 
-  applyTick(ps, as, now) {
+  applyTick(tick, ps, as, now) {
     const s = this.state;
+    this.clock.sample(tick, now);
     for (const p of s.players.values()) p.visible = false;
     for (let i = 0; i < ps.length; i += 11) {
       const sid = ps[i];
       const p = s.players.get(sid) || this.newPlayer(sid);
-      this.moveTo(p, ps[i + 1], ps[i + 2], ps[i + 3]);
+      if (sid !== s.me) remember(p, tick, ps[i + 1], ps[i + 2], ps[i + 3]);
       p.build = ps[i + 4]; p.weapon = ps[i + 5]; p.variant = ps[i + 6];
       p.clan = ps[i + 7]; p.hat = ps[i + 8]; p.z = ps[i + 9];
       p.visible = true;
@@ -262,7 +279,7 @@ class App {
       let a = s.animals.get(sid);
       if (!a) { a = { sid, type: as[i + 1], dirPlus: 0, animTime: 0, fresh: true }; s.animals.set(sid, a); }
       a.type = as[i + 1];
-      this.moveTo(a, as[i + 2], as[i + 3], as[i + 4]);
+      remember(a, tick, as[i + 2], as[i + 3], as[i + 4]);
       a.health = as[i + 5];
       a.visible = true;
       seen.add(sid);
@@ -270,11 +287,41 @@ class App {
     for (const [sid, a] of s.animals) if (!seen.has(sid)) s.animals.delete(sid);
   }
 
-  moveTo(e, x, y, dir) {
-    if (e.fresh) { e.x = e.x1 = e.x2 = x; e.y = e.y1 = e.y2 = y; e.dir = e.d1 = e.d2 = dir; e.fresh = false; e.dt = 0; return; }
-    e.x1 = e.x; e.y1 = e.y; e.x2 = x; e.y2 = y;
-    e.d1 = e.dir; e.d2 = dir;
-    e.dt = 0;
+  /** Sids whose buildings are friendly to you: yourself and your clan. */
+  friendlySids() {
+    const set = new Set([this.state.me]);
+    for (let i = 0; i < this.me.members.length; i += 2) set.add(this.me.members[i]);
+    return set;
+  }
+
+  /** Start our own melee swing the moment we click; the server confirms it shortly. */
+  predictSwing() {
+    const s = this.state; const me = s.players.get(s.me);
+    if (!me || !this.alive || this.me.build >= 0) return;
+    const w = WEAPONS[this.me.weapon];
+    const now = performance.now();
+    if (w.gather === undefined || me.animTime > 0 || now < this.nextLocalSwing) return;
+    startSwing(me, this.wouldHit(me, w, this.aimDir()), w.speed);
+    this.predictedSwingAt = now;
+    this.nextLocalSwing = now + swingTicks(w.speed * (hatOf(me.hat)?.atkSpd || 1)) * C.TICK_MS - 20;
+  }
+
+  /** The server's hit test, run on what we can see, to pick the swing's arc. */
+  wouldHit(me, w, dir) {
+    const s = this.state; const mates = this.friendlySids();
+    const inCone = (x, y) => angleDist(dirTo(x, y, me.x, me.y), dir) <= C.GATHER_ANGLE;
+    for (const o of s.visibleObjects(me.x - 300, me.y - 300, 600, 600)) {
+      if (Math.hypot(o.x - me.x, o.y - me.y) - o.scale <= w.range && inCone(o.x, o.y)) return true;
+    }
+    for (const p of s.players.values()) {
+      if (p.sid === s.me || !p.visible || mates.has(p.sid) && p.clan && p.clan === me.clan) continue;
+      if (Math.hypot(p.x - me.x, p.y - me.y) - C.PLAYER_SCALE * C.PLAYER_HIT_PAD <= w.range && inCone(p.x, p.y)) return true;
+    }
+    for (const a of s.animals.values()) {
+      const r = ANIMALS[a.type].scale * C.PLAYER_HIT_PAD;
+      if (a.visible && Math.hypot(a.x - me.x, a.y - me.y) - r <= w.range && inCone(a.x, a.y)) return true;
+    }
+    return false;
   }
 
   addObjects(flat) {
@@ -353,6 +400,7 @@ class App {
       if (!this.alive || e.button !== 0) return;
       this.attacking = true;
       this.send('attack', 1, this.aimDir());
+      this.predictSwing();
     });
     window.addEventListener('mouseup', (e) => {
       if (e.button !== 0 || !this.attacking) return;
@@ -375,7 +423,7 @@ class App {
       if (e.repeat) return;
       const k = e.code;
       this.keys.add(k);
-      if (k === 'Space') { e.preventDefault(); if (!this.attacking) { this.attacking = true; this.send('attack', 1, this.aimDir()); } return; }
+      if (k === 'Space') { e.preventDefault(); if (!this.attacking) { this.attacking = true; this.send('attack', 1, this.aimDir()); this.predictSwing(); } return; }
       if (k === 'KeyE') this.send('auto');
       else if (k === 'KeyX') this.lockAim = !this.lockAim;
       else if (k === 'KeyR') this.send('ping');
@@ -413,12 +461,13 @@ class App {
     return this.aim;
   }
 
-  sendInput(now) {
+  sendInput(now, delta) {
     const held = (...codes) => codes.some((c) => this.keys.has(c));
     const dx = (held('KeyD', 'ArrowRight') ? 1 : 0) - (held('KeyA', 'ArrowLeft') ? 1 : 0);
     const dy = (held('KeyS', 'ArrowDown') ? 1 : 0) - (held('KeyW', 'ArrowUp') ? 1 : 0);
-    const dir = dx || dy ? Math.atan2(dy, dx) : null;
-    if (dir !== this.moveDir) { this.moveDir = dir; this.send('move', dir); }
+    this.moveDir = dx || dy ? Math.atan2(dy, dx) : null;
+    // One numbered input per tick, predicted locally as it is sent.
+    this.predictor.frame(delta, this.moveDir, (seq, dir) => this.send('input', seq, dir));
     const aim = this.aimDir();
     if (now - this.lastAimSent > AIM_MS && (this.sentAim === null || Math.abs(aim - this.sentAim) > 0.01)) {
       this.lastAimSent = now; this.sentAim = aim;
@@ -433,21 +482,23 @@ class App {
   }
 
   frame(now) {
-    const delta = Math.min(100, now - this.lastFrame);
+    const elapsed = now - this.lastFrame;
+    const delta = Math.min(100, elapsed);       // animations: capped so a stall does not jump them
     this.lastFrame = now;
     const s = this.state;
-    if (this.alive) this.sendInput(now);
+    if (this.alive) this.sendInput(now, elapsed);   // inputs: real time, so the server is never starved
 
-    for (const e of [...s.players.values(), ...s.animals.values()]) {
-      if (!e.visible) continue;
-      e.dt += delta;
-      const t = Math.min(1.7, e.dt / INTERP_MS);
-      e.x = e.x1 + (e.x2 - e.x1) * t;
-      e.y = e.y1 + (e.y2 - e.y1) * t;
-      e.dir = lerpAngle(e.d1, e.d2, Math.min(1.2, e.dt / C.TICK_MS));
-    }
+    // Everyone else: a little in the past, from their snapshot buffers.
+    const at = this.clock.renderTick(now);
+    for (const p of s.players.values()) if (p.visible && p.sid !== s.me) place(p, at);
+    for (const a of s.animals.values()) if (a.visible) place(a, at);
+    // You: predicted, right now.
     const me = s.players.get(s.me);
-    if (me && this.alive) me.dir = this.aimDir();
+    if (me && this.alive) {
+      const pos = this.predictor.position();
+      me.x = pos.x; me.y = pos.y;
+      me.dir = this.aimDir();
+    }
 
     for (const o of s.objects.values()) {
       if (o.xWiggle) { o.xWiggle *= Math.pow(0.99, delta); if (Math.abs(o.xWiggle) < 0.05) o.xWiggle = 0; }

@@ -3,6 +3,7 @@
 
 import { MAP, SPIKE_KNOCK, POISON, CACTUS_DMG, inRiver } from '#shared/config.js';
 import { dist, dirTo } from '#shared/util.js';
+import { bump } from '#shared/physics.js';
 import { TREE, BUSH, ROCK, GOLD, isCactus } from '#shared/world.js';
 
 const CELL = 240;
@@ -138,17 +139,12 @@ export class ObjectManager {
    * the share of the tick this sub-step covers. Returns true on contact.
    */
   collide(e, o, step, game) {
-    const reach = e.scale + o.getScale();
-    const dx = e.x - o.x; const dy = e.y - o.y;
-    if (Math.abs(dx) > reach && Math.abs(dy) > reach) return false;
-    const gap = Math.hypot(dx, dy) - reach;
-    if (gap > 0) return false;
-    const friendly = o.owner && (o.owner === e || (o.owner.clan && o.owner.clan === e.clan));
-    if (!o.ignoreCollision) {
+    const friendly = !!o.owner && (o.owner === e || (!!o.owner.clan && o.owner.clan === e.clan));
+    // The bump itself is shared with the client's prediction; damage is not.
+    const hit = bump(e, o, o.getScale(), step, friendly);
+    if (!hit) return false;
+    if (hit === 'solid') {
       const dir = dirTo(e.x, e.y, o.x, o.y);
-      e.x = o.x + reach * Math.cos(dir);
-      e.y = o.y + reach * Math.sin(dir);
-      e.xVel *= 0.75; e.yVel *= 0.75;
       if (o.dmg && !friendly) {
         e.changeHealth(-o.dmg, o.owner, game);
         const knock = SPIKE_KNOCK * (e.weight || 1);
@@ -157,17 +153,11 @@ export class ObjectManager {
       }
       if (e.colDmg && o.health) game.damageObject(o, e.colDmg, null, dirTo(o.x, o.y, e.x, e.y));
     } else if (o.item.trap) {
-      if (!friendly && !e.noTrap) { e.lockMove = true; o.hideFromEnemy = false; }
-    } else if (o.item.boostSpeed) {
-      const b = step * o.item.boostSpeed * (e.weight || 1);
-      e.xVel += b * Math.cos(o.dir); e.yVel += b * Math.sin(o.dir);
-    } else if (o.item.healCol) {
-      e.healCol = o.item.healCol;
+      if (e.lockMove) o.hideFromEnemy = false;
     } else if (o.item.teleport && e.isPlayer) {
       e.x = 100 + Math.random() * (MAP - 200);
       e.y = 100 + Math.random() * (MAP - 200);
     }
-    if (o.zIndex > e.zIndex) e.zIndex = o.zIndex;
     return true;
   }
 }

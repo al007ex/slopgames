@@ -11,16 +11,23 @@ import { resourceSprite, resourceKey, TREE, BUSH } from '#shared/world.js';
 import { spriteInfo, OUTLINE, PX } from '#shared/sprites.js';
 import * as A from './assets.js';
 import { animate, startSwing, weaponBox } from '#shared/pose.js';
+import { generateDecor } from '#shared/decor.js';
 
 export { startSwing };
 
 // Everything drawn in code uses the art's own outline: same colour, same width.
 const DARK = '#282828';
 const OUTLINE_W = OUTLINE;
-const GRASS = '#b6db66';
-const SNOW = '#ffffff';
-const SAND = '#dbc666';
-const WATER = '#91b2db';
+// A warm, cosy palette: sunlit olive grass, cream snow, honey sand, soft teal water.
+export const PALETTE = {
+  grass: '#a9c763', snow: '#f6f1e6', sand: '#e2c27b', bank: '#dcb873', water: '#7fb3c2', waterDeep: '#72a7b8',
+  grid: 'rgba(74, 52, 26, 0.075)', edge: 'rgba(58, 36, 16, 0.32)',
+  friend: '#9ccc5e', foe: '#d9685a', barBack: '#3a2e26',
+};
+const GRASS = PALETTE.grass;
+const SNOW = PALETTE.snow;
+const SAND = PALETTE.sand;
+const WATER = PALETTE.water;
 const FONT = 'Hammersmith One';
 const HAND_R = 14;
 const BAR_W = 50;
@@ -76,12 +83,15 @@ export class Renderer {
   frame(s, delta, now) {
     const g = this.g;
     g.setTransform(this.dpr * this.scale, 0, 0, this.dpr * this.scale, 0, 0);
+    g.imageSmoothingEnabled = true;
+    g.imageSmoothingQuality = 'high';
     const ox = this.cam.x - this.viewW / 2;
     const oy = this.cam.y - this.viewH / 2;
     this.ox = ox; this.oy = oy;
 
     this.drawGround(ox, oy, delta);
     this.drawGrid(ox, oy);
+    this.drawDecor(ox, oy);
 
     const objs = s.visibleObjects(ox, oy, this.viewW, this.viewH);
     this.drawObjects(objs, -1, now);
@@ -98,6 +108,20 @@ export class Renderer {
     this.drawOverlays(s, delta, now);
     if (this.showHitboxes) this.drawHitboxes(s, objs);
     this.drawMapEdge(ox, oy);
+    this.drawVignette();
+  }
+
+  /** A soft warm darkening towards the screen's edges. */
+  drawVignette() {
+    const g = this.g; const w = this.viewW; const h = this.viewH;
+    if (!this.vignette || this.vignette.w !== w || this.vignette.h !== h) {
+      const grad = g.createRadialGradient(w / 2, h / 2, Math.min(w, h) * 0.42, w / 2, h / 2, Math.hypot(w, h) * 0.62);
+      grad.addColorStop(0, 'rgba(60, 38, 16, 0)');
+      grad.addColorStop(1, 'rgba(60, 38, 16, 0.22)');
+      this.vignette = { w, h, grad };
+    }
+    g.fillStyle = this.vignette.grad;
+    g.fillRect(0, 0, w, h);
   }
 
   /** Debug view (?hitboxes): every collision circle over its sprite. */
@@ -129,15 +153,48 @@ export class Renderer {
     this.waterMult += this.waterPlus * C.WAVE_SPEED * delta;
     if (this.waterMult >= C.WAVE_MAX) { this.waterMult = C.WAVE_MAX; this.waterPlus = -1; }
     else if (this.waterMult <= 1) { this.waterMult = 1; this.waterPlus = 1; }
-    band(C.RIVER_TOP - C.RIVER_PADDING, C.RIVER_BOTTOM + C.RIVER_PADDING, SAND);
+    band(C.RIVER_TOP - C.RIVER_PADDING, C.RIVER_BOTTOM + C.RIVER_PADDING, PALETTE.bank);
     const wave = (this.waterMult - 1) * 250;
     band(C.RIVER_TOP - wave, C.RIVER_BOTTOM + wave, WATER);
+    band(C.RIVER_TOP + 90, C.RIVER_BOTTOM - 90, PALETTE.waterDeep);
+  }
+
+  /** Grow the scenery for this world. */
+  setSeed(seed) {
+    if (this.decorSeed === seed) return;
+    this.decorSeed = seed;
+    this.decor = new Map();
+    for (const d of generateDecor(seed)) {
+      const k = Math.floor(d.x / 400) * 100000 + Math.floor(d.y / 400);
+      if (!this.decor.has(k)) this.decor.set(k, []);
+      this.decor.get(k).push(d);
+    }
+  }
+
+  drawDecor(ox, oy) {
+    if (!this.decor) return;
+    const g = this.g;
+    for (let cx = Math.floor((ox - 120) / 400); cx <= Math.floor((ox + this.viewW + 120) / 400); cx++) {
+      for (let cy = Math.floor((oy - 120) / 400); cy <= Math.floor((oy + this.viewH + 120) / 400); cy++) {
+        const cell = this.decor.get(cx * 100000 + cy);
+        if (!cell) continue;
+        for (const d of cell) {
+          const img = A.decorSprite(d.key);
+          const { w, h } = spriteInfo(d.key);
+          g.save();
+          g.translate(d.x - ox, d.y - oy);
+          g.rotate(d.rot);
+          g.drawImage(img, -w / 2, -h / 2, w, h);
+          g.restore();
+        }
+      }
+    }
   }
 
   drawGrid(ox, oy) {
     const g = this.g;
     g.save();
-    g.lineWidth = 4; g.strokeStyle = '#000'; g.globalAlpha = 0.06;
+    g.lineWidth = 3; g.strokeStyle = PALETTE.grid;
     g.beginPath();
     for (let x = Math.ceil(ox / 60) * 60 - ox; x < this.viewW; x += 60) { g.moveTo(x, 0); g.lineTo(x, this.viewH); }
     for (let y = Math.ceil(oy / 60) * 60 - oy; y < this.viewH; y += 60) { g.moveTo(0, y); g.lineTo(this.viewW, y); }
@@ -148,7 +205,7 @@ export class Renderer {
   drawMapEdge(ox, oy) {
     const g = this.g;
     g.save();
-    g.fillStyle = 'rgba(0, 0, 70, 0.35)';
+    g.fillStyle = PALETTE.edge;
     const l = -ox; const t = -oy; const r = C.MAP - ox; const b = C.MAP - oy;
     if (l > 0) g.fillRect(0, 0, l, this.viewH);
     if (r < this.viewW) g.fillRect(r, 0, this.viewW - r, this.viewH);
@@ -337,7 +394,7 @@ export class Renderer {
         g.strokeText(data.name, x, y - data.scale - NAME_Y);
         g.fillText(data.name, x, y - data.scale - NAME_Y);
       }
-      if (a.health > 0 && a.health < data.health) this.healthBar(x, y + data.scale, a.health / data.health, '#cc5151');
+      if (a.health > 0 && a.health < data.health) this.healthBar(x, y + data.scale, a.health / data.health, PALETTE.foe);
     }
     for (const p of s.players.values()) {
       if (!p.visible) continue;
@@ -354,14 +411,14 @@ export class Renderer {
       }
       if (p.health > 0) {
         const friendly = p.sid === s.me || (me && p.clan && p.clan === me.clan);
-        this.healthBar(x, y + C.PLAYER_SCALE, p.health / p.maxHealth, friendly ? '#8ecc51' : '#cc5151');
+        this.healthBar(x, y + C.PLAYER_SCALE, p.health / p.maxHealth, friendly ? PALETTE.friend : PALETTE.foe);
       }
       if (p.chat && now - p.chat.at < C.CHAT_SHOW) {
         g.font = `32px ${FONT}`;
         const tw = g.measureText(p.chat.text).width + 34;
         const cy = ny - 60;
-        g.fillStyle = 'rgba(0,0,0,0.2)';
-        g.beginPath(); g.roundRect(x - tw / 2, cy - 23, tw, 46, 6); g.fill();
+        g.fillStyle = 'rgba(58, 40, 24, 0.32)';
+        g.beginPath(); g.roundRect(x - tw / 2, cy - 23, tw, 46, 8); g.fill();
         g.fillStyle = '#fff'; g.fillText(p.chat.text, x, cy + 1);
       }
     }
@@ -382,7 +439,7 @@ export class Renderer {
 
   healthBar(x, y, ratio, color) {
     const g = this.g;
-    g.fillStyle = DARK;
+    g.fillStyle = PALETTE.barBack;
     g.beginPath(); g.roundRect(x - BAR_W - BAR_PAD, y + NAME_Y, BAR_W * 2 + BAR_PAD * 2, 17, 8); g.fill();
     g.fillStyle = color;
     g.beginPath(); g.roundRect(x - BAR_W, y + NAME_Y + BAR_PAD, BAR_W * 2 * Math.max(0, Math.min(1, ratio)), 17 - BAR_PAD * 2, 7); g.fill();

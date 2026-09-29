@@ -20,6 +20,7 @@ export const SERVER = {
   welcome: ['u16', 'u16', 'u32'],                            // sid, map size, world seed
   spawned: ['u16', ['list', 'u8', 'u8'], ['list', 'u8', 'u8'], ['list', 'u8', 'u16'], 'u16'], // sid, items, weapons, hats owned, hat worn
   tick: [
+    'u32',                                                   // server tick number: the client's clock for smoothing
     // players: sid, x, y, dir, build item (-1 none), weapon, variant, clan id, hat shown, z, clan owner?
     ['flat', 'u8', ['u16', 'u16', 'u16', 'ang', 'i8', 'u8', 'u8', 'u16', 'u16', 'u8', 'u8']],
     // animals: sid, type, x, y, dir, health
@@ -46,6 +47,9 @@ export const SERVER = {
   count: ['u8', 'u8'],                                       // item group, placed
   proj: ['u16', 'u16', 'ang', 'u16', 'u8', 'u8', 'u32'],     // x, y, dir, range, projectile, layer, sid
   prm: ['u32'],                                              // a projectile hit something
+  // Your own player, exactly, after the tick that used your input `seq` —
+  // the client replays anything newer on top (prediction).
+  me: ['u16', 'f32', 'f32', 'f32', 'f32', 'f32', 'u8', 'u8', 'u8'], // seq, x, y, xVel, yVel, slowMult, z, trapped, inputs still queued
   leaders: [['flat', 'u8', ['u16', 'str', 'u32']]],          // sid, name, gold
   mm: [['flat', 'u8', ['u16', 'u16']]],                      // clan mates on the minimap
   chat: ['u16', 'str'],
@@ -59,7 +63,8 @@ export const SERVER = {
 
 export const CLIENT = {
   spawn: ['str', 'u8'],             // name, skin colour
-  move: ['angn'],                   // direction, or null to stop
+  move: ['angn'],                   // direction, or null to stop (bots and old clients)
+  input: ['u16', 'angn'],           // one per tick: sequence number, direction or null
   aim: ['ang'],
   attack: ['u8', 'ang'],            // held?, direction
   auto: [],

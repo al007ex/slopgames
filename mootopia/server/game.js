@@ -67,6 +67,7 @@ export class Game {
     if (pad) { at = { x: pad.x, y: pad.y }; this.removeObject(pad); p.changeItemCount(pad.item.group.id, -1); }
     else at = this.freeSpot(C.PLAYER_SCALE);
     p.spawn(at);
+    p.inputs = [];
     p.seen = new Set();
     p.send('spawned', p.sid, p.items, p.weapons, [...p.hatsOwned], p.hatId);
     p.send('xp', 0, C.FIRST_XP, 1);
@@ -102,6 +103,7 @@ export class Game {
     this.time += delta;
     this.tickCount++;
     const alive = this.alivePlayers();
+    for (const p of alive) p.takeInput();
     for (const p of alive) p.update(delta);
     // Push overlapping players apart, half each.
     for (let i = 0; i < alive.length; i++) {
@@ -272,7 +274,8 @@ export class Game {
         fresh.push(o.sid, o.x, o.y, o.dir, o.scale, o.type ?? -1, o.item ? o.item.id : -1, o.owner ? o.owner.sid : 0);
       }
       if (fresh.length) p.send('objs', fresh);
-      p.send('tick', ps, as);
+      p.send('tick', this.tickCount, ps, as);
+      p.send('me', p.lastSeq, p.x, p.y, p.xVel, p.yVel, p.slowMult, p.zIndex, p.lockMove ? 1 : 0, p.inputs.length);
       this.flush(p);
     }
   }

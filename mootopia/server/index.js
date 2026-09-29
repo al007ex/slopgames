@@ -122,7 +122,10 @@ export function handle(game, p, [type, a, b]) {
       if (!p.alive) game.spawn(p, { name: a, skin: b });
       break;
     case 'move':
-      if (p.alive) p.moveDir = a;
+      if (p.alive) { p.inputs.length = 0; p.moveDir = a; }
+      break;
+    case 'input':
+      if (p.alive) p.queueInput(a, b);
       break;
     case 'aim':
       if (p.alive) p.dir = a;
