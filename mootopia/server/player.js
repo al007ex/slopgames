@@ -28,7 +28,7 @@ export class Player {
     this.gold = 0;
     this.scale = C.PLAYER_SCALE;
     this.x = 0; this.y = 0;
-    this.chatAt = 0;
+    this.chatAt = -Infinity;         // so the very first message is never held back
     this.chat = null;
     this.shameTimer = 0;
     this.shameCount = 0;
