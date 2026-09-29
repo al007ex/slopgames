@@ -20,6 +20,19 @@ const origin = process.env.SITE_ORIGIN || 'https://slopgames.al007ex.com';
 // One entry per game. `dir`, `port` and `health` drive the launcher; the rest is
 // presentation, so adding a game to the arcade means adding an object here.
 const games = {
+  sideways: {
+    name: 'Sideways',
+    dir: path.join(root, 'sideways'),
+    port: 3207,
+    health: '/health',
+    description: 'Street drifting, takeovers and track drifting in one night city.',
+    blurb: 'Throw it sideways through downtown, own the intersection with donuts, rollbacks and flames while the crowd goes wild, then get judged on the harbor circuit. Easy to drift on a keyboard, deep enough to master.',
+    art: '/assets/art/sideways.jpg',
+    tags: ['racing', 'drifting', '3d', 'solo'],
+    players: 'SOLO · 3D',
+    fresh: true,
+    state: 'stopped', process: null, sessions: new Map(), lastActivity: 0, startPromise: null,
+  },
   mootopia: {
     name: 'Mootopia',
     dir: path.join(root, 'mootopia'),
@@ -30,7 +43,6 @@ const games = {
     art: '/assets/art/mootopia.jpg',
     tags: ['io', 'building', 'pvp', 'multiplayer'],
     players: 'LIVE MULTIPLAYER',
-    featured: true,
     state: 'stopped', process: null, sessions: new Map(), lastActivity: 0, startPromise: null,
   },
   stormwall: {
@@ -281,32 +293,40 @@ function asset(relative) {
   return assetVersions.get(relative);
 }
 
-function gameCard(slug, game) {
-  return `<article class="game-card${game.featured ? ' featured' : ''}" data-slug="${slug}" data-name="${escape(game.name)}" data-tags="${game.tags.join(',')}" data-blurb="${escape(game.blurb)}">`
-    + `<a class="card-art" href="/${slug}/" data-launch="${slug}" aria-label="Play ${escape(game.name)}">`
-    + `<img src="${asset(game.art)}" width="1200" height="675" alt="${escape(game.name)} key art"${game.featured ? ' fetchpriority="high"' : ' loading="lazy"'}>`
-    + `<div class="badges"><span class="badge">${escape(game.players)}</span><span class="badge live" hidden><i></i><b>0 PLAYING</b></span></div>`
-    + `<div class="play-veil"><span>Play now</span></div>`
-    + `<div class="card-overlay"><h3>${escape(game.name)}</h3><p>${escape(game.blurb)}</p></div></a></article>`;
+const ICONS = {
+  new: '<svg viewBox="0 0 24 24"><path d="M12 2.5l2.6 6.2 6.7.5-5.1 4.4 1.6 6.5L12 16.6 6.2 20.1l1.6-6.5L2.7 9.2l6.7-.5z"/></svg>',
+  multi: '<svg viewBox="0 0 24 24"><circle cx="8.5" cy="8" r="3.2"/><circle cx="16.5" cy="9" r="2.6"/><path d="M2.5 19c0-3.3 2.7-5.6 6-5.6s6 2.3 6 5.6z"/><path d="M14.2 19c0-1.9-.6-3.5-1.7-4.7.9-.6 2.2-1 3.6-1 2.8 0 5.3 2 5.3 5.7z"/></svg>',
+  chevron: '<svg viewBox="0 0 24 24"><path d="M9 5l7 7-7 7"/></svg>',
+};
+
+/** One game tile. `size` is 'big', 'small' or 'mini'. */
+function tile(slug, game, size = 'small', eager = false) {
+  const multi = game.tags.includes('multiplayer');
+  const badge = game.fresh ? `<span class="tile-badge new" title="New">${ICONS.new}</span>`
+    : multi ? `<span class="tile-badge multi" title="Multiplayer">${ICONS.multi}</span>` : '';
+  return `<a class="tile ${size}" href="/${slug}/" data-launch="${slug}" data-slug="${slug}" data-name="${escape(game.name)}" data-tags="${game.tags.join(',')}" aria-label="Play ${escape(game.name)}">`
+    + `<img src="${asset(game.art)}" width="1200" height="675" alt=""${eager ? ' fetchpriority="high"' : ' loading="lazy"'}>`
+    + badge
+    + `<span class="tile-live" hidden><i></i><b></b></span>`
+    + `<span class="tile-name">${escape(game.name)}</span></a>`;
 }
 
 function homePage() {
   const entries = Object.entries(games);
-  const featured = entries.find(([, game]) => game.featured)?.[1] || entries[0][1];
-  const tags = ['all', ...new Set(entries.flatMap(([, game]) => game.tags))];
-  const description = 'Play free browser games on Slopgames — no download, no install. Launch Stormwall, Glowworm, DuoStrike, Pixel Brawl or Circuit Breaker and play instantly.';
-  // The 2x2 featured tile only earns its space once there are enough games to
-  // wrap around it; below that every tile stays the same size and fills the row.
-  const mosaic = entries.length >= 5;
-  // Two or four games read best as full-width pairs; an odd handful keeps the
-  // auto-fitting row.
-  const layout = mosaic ? ' mosaic' : entries.length % 2 === 0 ? ' pairs' : '';
+  // Only categories with a few games in them earn a chip.
+  const counts = {};
+  for (const [, game] of entries) for (const tag of game.tags) counts[tag] = (counts[tag] || 0) + 1;
+  const tags = Object.keys(counts).filter((tag) => counts[tag] >= 2).sort((a, b) => counts[b] - counts[a]);
+  const names = entries.map(([, game]) => game.name);
+  const description = `Free browser games, no download: ${names.slice(0, -1).join(', ')} and ${names.at(-1)}.`;
+  const picks = entries.slice(0, 6);
+  const together = entries.filter(([, game]) => game.tags.includes('multiplayer'));
 
   return `<!doctype html><html lang="en"><head>${head({
     title: 'Slopgames — free browser games, no download',
     description,
     url: `${origin}/`,
-    image: asset(featured.art),
+    image: asset(entries[0][1].art),
   })}<script type="application/ld+json">${JSON.stringify({
     '@context': 'https://schema.org',
     '@type': 'CollectionPage',
@@ -319,36 +339,25 @@ function homePage() {
       applicationCategory: 'Game', operatingSystem: 'Web browser', isAccessibleForFree: true,
     })),
   })}</script></head><body>
-<div class="glow one"></div><div class="glow two"></div>
-<header class="site-header"><div class="shell">${wordmark}
-<div class="search"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>
-<input id="search" type="search" placeholder="Search games and categories" aria-label="Search games" autocomplete="off"></div>
-<nav><a href="#how">How it works</a></nav></div></header>
-<main>
-<section class="arcade shell" id="games">
-<div class="section-head"><div><p class="eyebrow">PLAY INSTANTLY</p><h2>Top games right now</h2></div>
-<span class="count" id="result-count">${String(entries.length).padStart(2, '0')} GAMES</span></div>
-<div class="filters">${tags.map((tag, index) => `<button class="chip" data-tag="${tag}" aria-pressed="${index === 0}">${tag === 'all' ? 'All games' : escape(tag)}</button>`).join('')}</div>
-<div class="game-grid${layout}">${entries.map(([slug, game]) => gameCard(slug, game)).join('')}
-<p class="empty" id="no-results" hidden>No games match that search — try another word.</p></div>
-</section>
-
-<section class="how shell" id="how">
-<div class="how-grid">
-<div><b>01 — PICK</b><h3>Choose a game</h3><p>Everything runs in the browser. Nothing to download, nothing to install, no account needed to look around.</p></div>
-<div><b>02 — LAUNCH</b><h3>The server wakes up</h3><p>Press play and a dedicated game server starts on demand, usually in a couple of seconds. You play right inside the page.</p></div>
-<div><b>03 — SLEEP</b><h3>It shuts itself down</h3><p>When the last player leaves, the server sleeps again — which keeps the arcade cheap to run and quick to boot.</p></div>
-</div></section>
+<header class="site-header"><div class="bar">${wordmark}
+<label class="search"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>
+<input id="search" type="search" placeholder="Search" aria-label="Search games" autocomplete="off"></label></div>
+<nav class="cats bar" aria-label="Categories"><button class="chip" data-tag="all" aria-pressed="true">All</button>${tags.map((tag) => `<button class="chip" data-tag="${escape(tag)}" aria-pressed="false">${escape(tag)}</button>`).join('')}</nav></header>
+<main class="bar">
+<section class="row" id="continue" hidden><h2>Continue playing ${ICONS.chevron}</h2><div class="strip minis"></div></section>
+<section class="row" id="picks"><h2>Top picks for you</h2><div class="picks">${picks.map(([slug, game], i) => tile(slug, game, i === 0 || i === picks.length - 1 ? 'big' : 'small', i < 3)).join('')}</div></section>
+<section class="row" id="featured"><h2>Featured games</h2><div class="strip">${entries.map(([slug, game]) => tile(slug, game)).join('')}</div></section>
+${together.length ? `<section class="row" id="together"><h2>Play with friends</h2><div class="strip">${together.map(([slug, game]) => tile(slug, game)).join('')}</div></section>` : ''}
+<section class="row" id="results" hidden><h2 id="results-title">All games</h2><div class="grid">${entries.map(([slug, game]) => tile(slug, game)).join('')}</div><p class="empty" id="no-results" hidden>Nothing matches that.</p></section>
 </main>
-<footer><div class="shell">${wordmark}<span>Made for curious players.</span></div></footer>
+<footer class="bar">${wordmark}</footer>
 
 <div class="launcher" id="launcher" aria-hidden="true" role="dialog" aria-modal="true" aria-labelledby="launch-title">
 <div class="launcher-box"><button class="close" aria-label="Close game">×</button>
-<p class="eyebrow" id="launch-kicker">GET READY</p><h2 id="launch-title">Starting game…</h2>
-<p id="launch-text">Waking up a game server. This usually takes a few seconds.</p>
+<h2 id="launch-title">Loading…</h2><p id="launch-text"></p>
 <div class="progress"><i></i></div>
-<div class="embed-actions"><button id="full-screen">Fullscreen</button><button class="close">Back to arcade</button></div>
-<iframe id="game-frame" title="Slopgames game" allow="fullscreen; autoplay; gamepad; pointer-lock" allowfullscreen></iframe></div></div>
+<div class="embed-actions"><button id="full-screen">Fullscreen</button><button class="close">Back</button></div>
+<iframe id="game-frame" title="Game" allow="fullscreen; autoplay; gamepad; pointer-lock" allowfullscreen></iframe></div></div>
 <script src="/assets/site.js"></script></body></html>`;
 }
 
@@ -366,9 +375,8 @@ function offlinePage(game) {
     applicationCategory: 'Game', operatingSystem: 'Web browser', isAccessibleForFree: true,
   })}</script></head><body class="offline"><main>${wordmark}
 <section class="offline-card"><img class="offline-art" src="${asset(game.art)}" width="1200" height="675" alt="${escape(game.name)} key art" fetchpriority="high">
-<p class="eyebrow">GAME SERVER SLEEPING</p><h1>${escape(game.name)}</h1>
-<p>${escape(game.blurb)}</p><button data-launch="${slug}">Launch ${escape(game.name)}</button>
-<p class="small">Servers sleep after 15 minutes without active players, and wake again on demand.</p></section>
+<h1>${escape(game.name)}</h1>
+<button data-launch="${slug}">Play</button></section>
 </main><script src="/assets/site.js"></script></body></html>`;
 }
 

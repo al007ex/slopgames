@@ -5,6 +5,22 @@ and has its own setup instructions.
 
 ## Games
 
+### Sideways
+
+`sideways/` is a 3D drifting game set in one night city: street drifting
+downtown, takeovers in the Pit (donuts, rollbacks, flames off the limiter, a
+crowd that closes in as the hype builds) and a judged drift circuit down by
+the harbour. The car runs on a proper tyre and drivetrain model with driver
+aids that make it easy to drift on a keyboard; gamepads and touch work too.
+
+```bash
+cd sideways
+npm install
+npm start
+```
+
+Then open <http://localhost:3207>.
+
 ### Mootopia
 
 `mootopia/` is a cosy top-down gather, build and fight `.io` game: chop,
