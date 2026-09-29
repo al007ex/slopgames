@@ -1,0 +1,198 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover" />
+  <title>Sideways</title>
+  <meta name="description" content="Street drifting, takeovers and track drifting in one night city. Easy to throw sideways, deep enough for rollbacks, flames and limiter bangs." />
+  <meta name="theme-color" content="#07080d" />
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='14' fill='%2307080d'/%3E%3Cpath d='M14 44 L30 20 L50 20 L34 44 Z' fill='%23ff3d5a'/%3E%3C/svg%3E" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Chakra+Petch:ital,wght@0,400;0,600;0,700;1,700&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="css/style.css" />
+  <script type="importmap">
+    { "imports": { "three": "./vendor/three.module.min.js", "three/addons/": "./addons/", "#shared/": "./shared/" } }
+  </script>
+</head>
+<body>
+  <canvas id="view"></canvas>
+
+  <!-- ============================================================ MENU -->
+  <div id="menu" class="screen">
+    <div class="menu-top">
+      <h1 class="logo"><span>SIDE</span>WAYS</h1>
+      <div class="tagline">Street · Takeover · Circuit</div>
+    </div>
+
+    <div class="menu-body">
+      <section class="pick" id="pick-mode">
+        <div class="pick-title">Where</div>
+        <div class="cards" id="modes"></div>
+      </section>
+
+      <section class="pick" id="pick-car">
+        <div class="pick-title">What</div>
+        <div class="cards" id="cars"></div>
+        <div class="paint" id="paint"></div>
+      </section>
+
+      <section class="pick" id="pick-setup">
+        <div class="pick-title">How</div>
+        <div class="toggles">
+          <div class="toggle" data-key="assist">
+            <span class="toggle-name">Assists</span>
+            <div class="seg"><button data-v="easy">Easy</button><button data-v="pro">Pro</button><button data-v="off">Off</button></div>
+          </div>
+          <div class="toggle" data-key="gearbox">
+            <span class="toggle-name">Gearbox</span>
+            <div class="seg"><button data-v="auto">Auto</button><button data-v="manual">Manual</button></div>
+          </div>
+        </div>
+        <input id="name" type="text" maxlength="14" placeholder="Your name" autocomplete="off" spellcheck="false" />
+        <button id="drive" class="big" type="button">DRIVE</button>
+        <div class="menu-links">
+          <button type="button" data-open="controls">Controls</button>
+          <button type="button" data-open="settings">Settings</button>
+          <button type="button" data-open="boards">Top scores</button>
+        </div>
+      </section>
+    </div>
+  </div>
+
+  <!-- ============================================================ HUD -->
+  <div id="hud" hidden>
+    <div id="where" class="chip"></div>
+
+    <div id="combo">
+      <div id="combo-points">0</div>
+      <div id="combo-mult">×1.0</div>
+      <div id="combo-angle"><div></div></div>
+      <div id="combo-tags"></div>
+    </div>
+
+    <div id="callouts"></div>
+
+    <div id="session">
+      <div class="session-row" id="session-score"><span class="lbl">SCORE</span><span class="val">0</span></div>
+      <div class="session-row" id="session-best"><span class="lbl">BEST</span><span class="val">0</span></div>
+      <div id="takeover" hidden>
+        <div class="session-row"><span class="lbl">TIME</span><span class="val" id="to-time">2:30</span></div>
+        <div class="hype"><div class="hype-lbl">HYPE</div><div class="hype-bar"><div id="hype-fill"></div></div></div>
+      </div>
+      <div id="laps" hidden>
+        <div class="session-row"><span class="lbl">LAP</span><span class="val" id="lap-no">–</span></div>
+        <div class="session-row"><span class="lbl">LAST</span><span class="val" id="lap-last">–</span></div>
+        <div id="clips"></div>
+      </div>
+    </div>
+
+    <div id="dash">
+      <div id="tach">
+        <svg viewBox="0 0 220 120" aria-hidden="true">
+          <path id="tach-track" d="M20 110 A 90 90 0 0 1 200 110" />
+          <path id="tach-red" d="M20 110 A 90 90 0 0 1 200 110" />
+          <path id="tach-fill" d="M20 110 A 90 90 0 0 1 200 110" />
+        </svg>
+        <div id="gear">N</div>
+        <div id="rpm">0</div>
+      </div>
+      <div id="speed"><span id="speed-v">0</span><span class="unit">KM/H</span></div>
+      <div id="boost"><div id="boost-fill"></div></div>
+    </div>
+
+    <canvas id="minimap" width="220" height="220"></canvas>
+    <div id="hint"></div>
+
+    <div id="touch" hidden>
+      <div class="pad left"><button data-k="left">◀</button><button data-k="right">▶</button></div>
+      <div class="pad right">
+        <button data-k="handbrake" class="small">E-BRAKE</button>
+        <button data-k="clutch" class="small">CLUTCH</button>
+        <button data-k="brake">BRAKE</button>
+        <button data-k="gas" class="gas">GAS</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ============================================================ PAUSE -->
+  <div id="pause" class="screen dim" hidden>
+    <div class="panel">
+      <h2>Paused</h2>
+      <button type="button" data-act="resume" class="big">Resume</button>
+      <div class="row3">
+        <button type="button" data-act="goto" data-where="street">Downtown</button>
+        <button type="button" data-act="goto" data-where="takeover">The Pit</button>
+        <button type="button" data-act="goto" data-where="track">Circuit</button>
+      </div>
+      <button type="button" data-open="controls">Controls</button>
+      <button type="button" data-open="settings">Settings</button>
+      <button type="button" data-act="menu">Garage</button>
+    </div>
+  </div>
+
+  <!-- ============================================================ RESULTS -->
+  <div id="results" class="screen dim" hidden>
+    <div class="panel">
+      <h2 id="res-title">Takeover</h2>
+      <div id="res-score">0</div>
+      <div id="res-lines"></div>
+      <div id="res-rank"></div>
+      <button type="button" data-act="again" class="big">Run it back</button>
+      <button type="button" data-act="close">Keep driving</button>
+    </div>
+  </div>
+
+  <!-- ============================================================ SHEETS -->
+  <div id="controls" class="sheet" hidden>
+    <div class="panel wide">
+      <h2>Controls</h2>
+      <div class="keys">
+        <div><kbd>W</kbd> <kbd>↑</kbd><span>Throttle</span></div>
+        <div><kbd>S</kbd> <kbd>↓</kbd><span>Brake · hold to reverse</span></div>
+        <div><kbd>A</kbd> <kbd>D</kbd><span>Steer — always the way you want to go</span></div>
+        <div><kbd>Space</kbd><span>Handbrake</span></div>
+        <div><kbd>Shift</kbd><span>Clutch — tap it for a clutch kick</span></div>
+        <div><kbd>F</kbd><span>Two-step (from a stop): flames on the limiter</span></div>
+        <div><kbd>E</kbd> <kbd>Q</kbd><span>Shift up / down (manual)</span></div>
+        <div><kbd>C</kbd><span>Camera · <kbd>V</kbd> look back</span></div>
+        <div><kbd>T</kbd><span>Auto / manual gearbox</span></div>
+        <div><kbd>M</kbd><span>Mute</span></div>
+        <div><kbd>R</kbd><span>Reset the car</span></div>
+        <div><kbd>H</kbd><span>Horn</span></div>
+        <div><kbd>Esc</kbd><span>Pause</span></div>
+      </div>
+      <h3>Moves</h3>
+      <ul class="moves">
+        <li><b>Drift:</b> tap <kbd>Space</kbd> or <kbd>Shift</kbd> as you turn in, then hold <kbd>W</kbd>. Steer into the corner for more angle, out of it to straighten.</li>
+        <li><b>Donut:</b> from a stop, hold a direction and <kbd>W</kbd>.</li>
+        <li><b>Rollback:</b> at speed, <b>hold</b> <kbd>Space</kbd> and a direction until you're past sideways, let go of <kbd>Space</kbd> and keep the direction and <kbd>W</kbd> held. The car whips round, rolls backwards and comes back round.</li>
+        <li><b>Burnout:</b> from a stop, hold <kbd>W</kbd> and <kbd>S</kbd> together.</li>
+        <li><b>Flames:</b> hold <kbd>Shift</kbd> and <kbd>W</kbd> to bounce the limiter, or <kbd>F</kbd> and <kbd>W</kbd> for the two-step.</li>
+      </ul>
+      <p class="small-print">A gamepad works too: triggers for throttle and brake, stick to steer, <b>A</b> handbrake, <b>B</b> clutch, <b>X</b> two-step, bumpers shift.</p>
+      <button type="button" data-close class="big">Got it</button>
+    </div>
+  </div>
+
+  <div id="settings" class="sheet" hidden>
+    <div class="panel">
+      <h2>Settings</h2>
+      <div id="settings-list"></div>
+      <button type="button" data-close class="big">Done</button>
+    </div>
+  </div>
+
+  <div id="boards" class="sheet" hidden>
+    <div class="panel wide">
+      <h2>Top scores</h2>
+      <div id="boards-list" class="boards"></div>
+      <button type="button" data-close class="big">Close</button>
+    </div>
+  </div>
+
+  <div id="loading" class="screen"><div class="loading-bar"><div></div></div></div>
+
+  <script type="module" src="js/main.js"></script>
+</body>
+</html>
