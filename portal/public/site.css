@@ -342,7 +342,7 @@ main { padding: 18px 0 40px; }
 .embed-actions .close { position: static; font-size: inherit; }
 
 /* ------------------------------------------------------------ game page */
-.crumbs { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin: 0 0 14px 2px; font-size: .85rem; font-weight: 700; color: var(--faint); }
+.crumbs { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin: 0 0 14px 2px; font-size: .85rem; font-weight: 700; color: var(--muted); }
 .crumbs a { color: var(--muted); }
 .crumbs a:hover { color: var(--ink); }
 .crumbs [aria-current] { color: var(--ink); }
@@ -440,7 +440,7 @@ main { padding: 18px 0 40px; }
 .facts dl { margin: 0; }
 .facts dl div { display: flex; justify-content: space-between; gap: 14px; padding: 9px 0; border-top: 1px solid var(--line-soft); }
 .facts dl div:first-child { border-top: 0; }
-.facts dt { color: var(--faint); font-size: .85rem; font-weight: 700; }
+.facts dt { color: var(--muted); font-size: .85rem; font-weight: 700; }
 .facts dd { margin: 0; text-align: right; font-size: .9rem; font-weight: 700; }
 .facts-tags { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 14px; }
 .facts-tags .chip { padding: 5px 12px; font-size: .78rem; }
@@ -456,7 +456,7 @@ main { padding: 18px 0 40px; }
 .slot-game-side { width: 300px; }
 
 /* --------------------------------------------------------------- footer */
-.site-footer { margin-top: 20px; padding: 30px 0 44px; border-top: 1px solid var(--line-soft); color: var(--faint); font-size: .9rem; }
+.site-footer { margin-top: 20px; padding: 30px 0 44px; border-top: 1px solid var(--line-soft); color: var(--muted); font-size: .9rem; }
 .site-footer nav { display: flex; flex-wrap: wrap; gap: 6px 18px; }
 .site-footer a { color: var(--muted); font-weight: 700; }
 .site-footer a:hover { color: var(--ink); }
