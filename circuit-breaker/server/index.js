@@ -52,6 +52,7 @@ const MIME = {
   '.png': 'image/png',
   '.jpg': 'image/jpeg',
   '.ico': 'image/x-icon',
+  '.woff2': 'font/woff2',
 };
 
 function send(res, status, body, type = 'application/json; charset=utf-8', headers = {}) {

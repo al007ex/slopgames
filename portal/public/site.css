@@ -1,4 +1,10 @@
-@import url('https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=Nunito:wght@600;700;800&display=swap');
+/* Fonts are served from here rather than a font CDN: no third party sees who
+   opens the page, and there is one connection fewer before text appears. */
+@font-face { font-family: 'Nunito'; font-style: normal; font-weight: 600; font-display: swap; src: url(fonts/nunito-600.woff2) format('woff2'); }
+@font-face { font-family: 'Nunito'; font-style: normal; font-weight: 700; font-display: swap; src: url(fonts/nunito-700.woff2) format('woff2'); }
+@font-face { font-family: 'Nunito'; font-style: normal; font-weight: 800; font-display: swap; src: url(fonts/nunito-800.woff2) format('woff2'); }
+@font-face { font-family: 'DM Mono'; font-style: normal; font-weight: 400; font-display: swap; src: url(fonts/dm-mono-400.woff2) format('woff2'); }
+@font-face { font-family: 'DM Mono'; font-style: normal; font-weight: 500; font-display: swap; src: url(fonts/dm-mono-500.woff2) format('woff2'); }
 
 /* ---------------------------------------------------------------- tokens */
 :root {
@@ -113,11 +119,10 @@ button { font: inherit; cursor: pointer; }
   padding: 7px 15px;
   font-size: .85rem;
   font-weight: 700;
-  text-transform: capitalize;
   transition: background .15s, color .15s;
 }
 .chip:hover { color: var(--ink); background: #262a42; }
-.chip[aria-pressed='true'] { background: var(--ink); color: #0d0e1b; }
+.chip[aria-current] { background: var(--ink); color: #0d0e1b; }
 
 /* ------------------------------------------------------------------ rows */
 main { padding: 18px 0 40px; }
@@ -239,7 +244,6 @@ main { padding: 18px 0 40px; }
 
 .empty { color: var(--muted); padding: 20px 4px; }
 
-footer { padding: 26px 0 40px; border-top: 1px solid var(--line-soft); color: var(--faint); }
 
 /* ------------------------------------------------------------- launcher */
 .launcher {
@@ -337,77 +341,138 @@ footer { padding: 26px 0 40px; border-top: 1px solid var(--line-soft); color: va
 .embed-actions button:hover { color: var(--lime); border-color: var(--lime); }
 .embed-actions .close { position: static; font-size: inherit; }
 
-/* --------------------------------------------------- offline / admin page */
-body.offline { display: grid; place-items: center; min-height: 100vh; padding: 30px; }
-body.offline main { text-align: center; width: min(100%, 620px); }
-body.offline .wordmark { font-size: 1.3rem; }
+/* ------------------------------------------------------------ game page */
+.crumbs { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin: 0 0 14px 2px; font-size: .85rem; font-weight: 700; color: var(--faint); }
+.crumbs a { color: var(--muted); }
+.crumbs a:hover { color: var(--ink); }
+.crumbs [aria-current] { color: var(--ink); }
 
-.offline-card {
-  margin-top: 26px;
-  background: var(--panel);
-  border: 1px solid var(--line);
-  border-radius: var(--radius);
-  padding: 26px 26px 34px;
-  box-shadow: var(--shadow);
-}
-.offline-art {
-  width: 100%;
-  /* height:auto is required or the img height attribute wins and aspect-ratio
-     is ignored, leaving the art at its full intrinsic height. */
-  height: auto;
+.stage-wrap { display: grid; gap: 16px; margin-bottom: 34px; }
+.stage-wrap.with-side { grid-template-columns: minmax(0, 1fr) auto; align-items: start; }
+/* The stage stays 16:9 and never taller than the window leaves room for. */
+.player { min-width: 0; width: min(100%, calc((100vh - 260px) * 16 / 9)); margin-inline: auto; }
+
+.stage {
+  position: relative;
   aspect-ratio: 16 / 9;
-  object-fit: cover;
-  border: 1px solid var(--line);
-  border-radius: 12px;
-  margin-bottom: 22px;
+  width: 100%;
+  border-radius: 16px 16px 0 0;
+  overflow: hidden;
+  background: #05060c;
 }
-.offline-card h1 { margin: 12px 0 10px; font-size: clamp(2rem, 6vw, 2.9rem); letter-spacing: -.03em; }
-.offline-card p { color: var(--muted); line-height: 1.6; margin: 0 0 22px; }
-.offline-card button {
+.stage-art { width: 100%; height: 100%; object-fit: cover; }
+.stage-cover {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-content: center;
+  justify-items: center;
+  gap: 14px;
+  background: radial-gradient(ellipse at center, rgba(8, 9, 18, .25), rgba(8, 9, 18, .72));
+}
+.play {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
   background: var(--lime);
   color: #0a0c14;
   border: 0;
   border-radius: 999px;
-  padding: 13px 28px;
-  font: 600 .92rem 'Space Grotesk', sans-serif;
+  padding: 16px 38px 16px 30px;
+  font-size: 1.35rem;
+  font-weight: 800;
+  box-shadow: 0 14px 40px -10px rgba(217, 255, 85, .55);
+  transition: transform .15s, box-shadow .15s;
 }
-.offline-card button:hover { transform: translateY(-2px); }
-.offline-card .small { font-size: .76rem; color: var(--faint); margin: 20px 0 0; }
+.play svg { width: 26px; height: 26px; fill: currentColor; }
+.play:hover { transform: scale(1.05); box-shadow: 0 18px 50px -10px rgba(217, 255, 85, .7); }
+.stage.loading .play { pointer-events: none; opacity: .75; }
+.stage-status { margin: 0; min-height: 1.4em; color: var(--ink); font-weight: 700; text-shadow: 0 2px 10px rgba(0, 0, 0, .8); }
+.stage-frame { position: absolute; inset: 0; width: 100%; height: 100%; border: 0; background: #05060c; }
+.stage.playing .stage-cover, .stage.playing .stage-art { display: none; }
+.stage:fullscreen { border-radius: 0; }
 
-.admin-card { max-width: 880px; text-align: left; }
-.admin-card h1 { font-size: clamp(2rem, 5vw, 3rem); }
-.token-row { display: flex; gap: 9px; margin: 24px 0 10px; }
-.token-row input {
-  min-width: 0; flex: 1;
-  border: 1px solid var(--line);
-  background: var(--bg);
+.stage-bar {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  background: var(--panel);
+  border-radius: 0 0 16px 16px;
+  padding: 12px 16px;
+}
+.stage-bar h1 { margin: 0; font-size: 1.25rem; font-weight: 800; letter-spacing: -.01em; }
+.stage-bar h1 span { display: inline-block; margin-left: 6px; color: var(--muted); font-size: .9rem; font-weight: 700; }
+.stage-live { display: flex; align-items: center; gap: 6px; font-size: .78rem; font-weight: 800; color: var(--muted); }
+.stage-live i { width: 7px; height: 7px; border-radius: 50%; background: var(--lime); box-shadow: 0 0 10px var(--lime); animation: pulse 1.6s infinite; }
+.stage-full {
+  margin-left: auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  background: var(--panel-2);
+  border: 0;
   color: var(--ink);
-  border-radius: 10px;
-  padding: 12px 14px;
-  font: .95rem 'DM Mono', monospace;
-}
-.token-row button {
-  border-radius: 10px;
-  padding: 12px 20px;
+  border-radius: 999px;
+  padding: 8px 14px;
   font-size: .85rem;
+  font-weight: 700;
 }
-.metrics { display: grid; grid-template-columns: repeat(3, 1fr); gap: 1px; background: var(--line); margin: 30px 0; border: 1px solid var(--line); border-radius: 12px; overflow: hidden; }
-.metrics div { background: var(--panel-2); padding: 18px; }
-.metrics b { display: block; font-size: 1.6rem; }
-.metrics span,
-.game-stats span,
-.crawler-stats span,
-.daily-stats span { display: block; color: var(--muted); font: .66rem 'DM Mono', monospace; margin-top: 5px; letter-spacing: .06em; }
-.admin-card h3 { margin-top: 28px; font-size: 1rem; letter-spacing: .02em; }
-.game-stats p,
-.crawler-stats p,
-.daily-stats p { border-top: 1px solid var(--line); padding: 11px 0; margin: 0; display: flex; justify-content: space-between; gap: 15px; }
-.game-stats span,
-.crawler-stats span,
-.daily-stats span { margin: 0; text-align: right; }
+.stage-full svg { width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-width: 2.4; stroke-linecap: round; }
+.stage-full:hover { background: #262a42; }
+
+.about { display: grid; grid-template-columns: minmax(0, 1fr) 300px; gap: 28px; align-items: start; margin-bottom: 36px; }
+.about-main { background: var(--panel); border-radius: var(--radius); padding: 8px 28px 24px; }
+.about-main h2 { margin: 22px 0 10px; font-size: 1.2rem; font-weight: 800; }
+.about-main p, .about-main li, .modes dd { color: #d4d2d8; line-height: 1.65; }
+.about-main p { margin: 0 0 12px; max-width: 72ch; }
+.modes { margin: 0; display: grid; gap: 10px; }
+.modes div { background: var(--panel-2); border-radius: 12px; padding: 12px 16px; }
+.modes dt { font-weight: 800; margin-bottom: 2px; }
+.modes dd { margin: 0; }
+.tips { margin: 0; padding-left: 20px; }
+.tips li { margin-bottom: 6px; }
+.controls { width: 100%; border-collapse: collapse; }
+.controls th, .controls td { text-align: left; padding: 9px 0; border-top: 1px solid var(--line-soft); vertical-align: top; }
+.controls th { width: 42%; padding-right: 16px; font: 500 .85rem/1.5 'DM Mono', monospace; color: var(--lime); }
+.controls td { color: #d4d2d8; }
+
+.facts { position: sticky; top: 130px; background: var(--panel); border-radius: var(--radius); padding: 18px 20px; }
+.facts dl { margin: 0; }
+.facts dl div { display: flex; justify-content: space-between; gap: 14px; padding: 9px 0; border-top: 1px solid var(--line-soft); }
+.facts dl div:first-child { border-top: 0; }
+.facts dt { color: var(--faint); font-size: .85rem; font-weight: 700; }
+.facts dd { margin: 0; text-align: right; font-size: .9rem; font-weight: 700; }
+.facts-tags { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 14px; }
+.facts-tags .chip { padding: 5px 12px; font-size: .78rem; }
+
+/* ------------------------------------------------ category and 404 pages */
+.page-title { margin: 4px 0 16px 4px; font-size: 1.9rem; font-weight: 800; letter-spacing: -.02em; }
+.lead { margin: -6px 0 20px 4px; color: var(--muted); }
+
+/* --------------------------------------------------------------- slots */
+/* Filled, or not, by the site's extension; nothing here assumes either. */
+.slot { display: flex; justify-content: center; margin: 0 auto 24px; overflow: hidden; }
+.slot-top { padding-top: 14px; }
+.slot-game-side { width: 300px; }
+
+/* --------------------------------------------------------------- footer */
+.site-footer { margin-top: 20px; padding: 30px 0 44px; border-top: 1px solid var(--line-soft); color: var(--faint); font-size: .9rem; }
+.site-footer nav { display: flex; flex-wrap: wrap; gap: 6px 18px; }
+.site-footer a { color: var(--muted); font-weight: 700; }
+.site-footer a:hover { color: var(--ink); }
+.foot-top { display: flex; flex-wrap: wrap; align-items: center; gap: 14px 34px; padding-bottom: 20px; }
+.foot-top .wordmark { color: var(--ink); }
+.foot-bottom { display: flex; flex-wrap: wrap; align-items: center; gap: 12px 30px; padding-top: 18px; border-top: 1px solid var(--line-soft); }
+.foot-bottom p { margin: 0 0 0 auto; }
+
+.sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0; }
 
 /* ------------------------------------------------------------ responsive */
 @media (max-width: 1100px) {
+  .stage-wrap.with-side { grid-template-columns: minmax(0, 1fr); }
+  .slot-game-side { display: none; }
+  .about { grid-template-columns: minmax(0, 1fr); }
+  .facts { position: static; }
   .picks { grid-template-columns: repeat(4, minmax(0, 1fr)); }
   .picks .tile:nth-child(6) { display: none; }
   .strip { grid-auto-columns: calc((100% - 3 * 12px) / 4); }
@@ -424,9 +489,14 @@ body.offline .wordmark { font-size: 1.3rem; }
   .strip.minis { grid-auto-columns: 104px; }
   .launcher { padding: 12px; }
   .launcher-box { padding: 22px; }
-  .metrics { grid-template-columns: repeat(2, 1fr); }
-  .game-stats p, .crawler-stats p, .daily-stats p { display: block; }
-  .game-stats span, .crawler-stats span, .daily-stats span { text-align: left; margin-top: 4px; }
+  .player { width: 100%; }
+  .stage { border-radius: 12px 12px 0 0; }
+  .stage-bar { flex-wrap: wrap; border-radius: 0 0 12px 12px; }
+  .stage-bar h1 span { display: block; margin: 2px 0 0; }
+  .play { padding: 13px 30px 13px 24px; font-size: 1.15rem; }
+  .about-main { padding: 4px 18px 18px; }
+  .controls th { width: 46%; }
+  .foot-bottom p { margin-left: 0; }
 }
 
 @media (prefers-reduced-motion: reduce) {

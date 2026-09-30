@@ -39,6 +39,7 @@ const MIME = {
   '.png': 'image/png',
   '.jpg': 'image/jpeg',
   '.ico': 'image/x-icon',
+  '.woff2': 'font/woff2',
 };
 
 function reply(res, status, body, type = 'application/json; charset=utf-8') {

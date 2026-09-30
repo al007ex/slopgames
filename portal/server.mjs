@@ -1,114 +1,43 @@
 import { createServer, request as httpRequest } from 'node:http';
-import { appendFile, mkdir, readdir, readFile, stat } from 'node:fs/promises';
+import { readFile, stat } from 'node:fs/promises';
 import { spawn } from 'node:child_process';
-import { createHash, createHmac, randomBytes } from 'node:crypto';
+import { createHash, randomBytes } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import path from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
+import { games } from './games.mjs';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
-const root = path.resolve(here, '..');
 const port = Number(process.env.PORT || 3200);
 const idleMs = Number(process.env.GAME_IDLE_MS || 15 * 60_000);
 const heartbeatGraceMs = 90_000;
-const analyticsDir = path.join(here, 'data');
 const publicDir = path.join(here, 'public');
-const analyticsSecret = process.env.ANALYTICS_SECRET || randomBytes(32).toString('hex');
-const adminToken = process.env.ADMIN_TOKEN || '';
 const origin = process.env.SITE_ORIGIN || 'https://slopgames.al007ex.com';
+const siteName = 'Slopgames';
 
-// One entry per game. `dir`, `port` and `health` drive the launcher; the rest is
-// presentation, so adding a game to the arcade means adding an object here.
-const games = {
-  sideways: {
-    name: 'Sideways',
-    dir: path.join(root, 'sideways'),
-    port: 3207,
-    health: '/health',
-    description: 'Street drifting, takeovers and track drifting in one night city.',
-    blurb: 'Throw it sideways through downtown, own the intersection with donuts, rollbacks and flames while the crowd goes wild, then get judged on the harbor circuit. Easy to drift on a keyboard, deep enough to master.',
-    art: '/assets/art/sideways.jpg',
-    tags: ['racing', 'drifting', '3d', 'solo'],
-    players: 'SOLO · 3D',
-    fresh: true,
-    state: 'stopped', process: null, sessions: new Map(), lastActivity: 0, startPromise: null,
-  },
-  mootopia: {
-    name: 'Mootopia',
-    dir: path.join(root, 'mootopia'),
-    port: 3206,
-    health: '/health',
-    description: 'A cosy top-down gather, build and fight .io game.',
-    blurb: 'Chop trees, mine stone and gold, age up and build a windmill village, then defend it. Clans, hats, a boss bear and fast, smooth PvP, with bots keeping the fields busy.',
-    art: '/assets/art/mootopia.jpg',
-    tags: ['io', 'building', 'pvp', 'multiplayer'],
-    players: 'LIVE MULTIPLAYER',
-    state: 'stopped', process: null, sessions: new Map(), lastActivity: 0, startPromise: null,
-  },
-  stormwall: {
-    name: 'Stormwall',
-    dir: path.join(root, 'stormwall'),
-    port: 3205,
-    health: '/health',
-    description: 'A 100-player build-and-shoot battle royale.',
-    blurb: 'Drop from the blimp, harvest everything, throw up walls and ramps in a heartbeat, and be the last one standing as the storm closes in. Solo, duos or squads, with bots filling every empty seat.',
-    art: '/assets/art/stormwall.jpg',
-    tags: ['battle royale', 'building', 'shooter', 'multiplayer'],
-    players: '100-PLAYER BATTLE ROYALE',
-    state: 'stopped', process: null, sessions: new Map(), lastActivity: 0, startPromise: null,
-  },
-  glowworm: {
-    name: 'Glowworm',
-    dir: path.join(root, 'glowworm'),
-    port: 3204,
-    health: '/health',
-    description: 'A multiplayer neon snake game for desktop and mobile.',
-    blurb: 'Eat the light, cut other worms off and grow as long as you can. Live multiplayer in the slither.io mould, with mouse, keyboard or touch.',
-    art: '/assets/art/glowworm.jpg',
-    tags: ['multiplayer', 'io', 'snake'],
-    players: 'LIVE MULTIPLAYER',
-    state: 'stopped', process: null, sessions: new Map(), lastActivity: 0, startPromise: null,
-  },
-  duostrike: {
-    name: 'DuoStrike',
-    dir: path.join(root, 'duostrike'),
-    port: 3201,
-    health: '/health',
-    description: 'A two-player co-op arena adventure.',
-    blurb: 'Bring a friend, clear the arena, and do not leave your teammate behind. Krunker-style movement meets co-op objectives.',
-    art: '/assets/art/duostrike.jpg',
-    tags: ['co-op', 'shooter', 'multiplayer'],
-    players: '2 PLAYERS',
-    state: 'stopped', process: null, sessions: new Map(), lastActivity: 0, startPromise: null,
-  },
-  'pixel-brawl': {
-    name: 'Pixel Brawl',
-    dir: path.join(root, 'pixel brawl'),
-    port: 3202,
-    health: '/api/status',
-    description: 'A rapid-fire pixel arena brawler.',
-    blurb: 'Pick a brawler, queue up, and take the arena one round at a time. Gem Grab, Showdown, Bounty and Duels, solo or against players.',
-    art: '/assets/art/pixel-brawl.jpg',
-    tags: ['brawler', 'pixel', 'multiplayer', 'solo'],
-    players: 'SOLO OR ONLINE',
-    state: 'stopped', process: null, sessions: new Map(), lastActivity: 0, startPromise: null,
-  },
-  'circuit-breaker': {
-    name: 'Circuit Breaker',
-    dir: path.join(root, 'circuit-breaker'),
-    port: 3203,
-    health: '/health',
-    description: 'A neon maze tower defence with overheating towers.',
-    blurb: 'Bend the route, then manage the heat. Every tower shuts down if you push it, and Overclock buys five seconds of doubled fire for a guaranteed shutdown after.',
-    art: '/assets/art/circuit-breaker.jpg',
-    tags: ['strategy', 'tower defence', 'solo'],
-    players: 'SOLO',
-    state: 'stopped', process: null, sessions: new Map(), lastActivity: 0, startPromise: null,
-  },
-};
+// Anything specific to whoever runs the site (visitor statistics, ads, legal
+// pages, search console tags) lives outside this repository, in a module that
+// SLOPGAMES_EXTENSION points at. Without one the portal runs exactly as it is.
+// A module may export any of:
+//   init({ games, origin, layout, escape })  once, at start-up
+//   handle(req, res, url)                    true if it answered the request
+//   head(page), slot(name, page)             HTML for the <head> and named slots
+//   event(type, data, req)                   page views, launches, play sessions
+//   sitemap()                                extra [{ path, priority }] entries
+const extension = process.env.SLOPGAMES_EXTENSION
+  ? await import(pathToFileURL(path.resolve(process.env.SLOPGAMES_EXTENSION)).href)
+  : {};
+function hook(name, ...args) {
+  try { return extension[name]?.(...args); } catch (error) { console.error(`Extension ${name}() failed:`, error.message); return undefined; }
+}
+function slot(name, page) {
+  const html = hook('slot', name, page);
+  return html ? `<div class="slot slot-${name}">${html}</div>` : '';
+}
 
 const slugOf = (game) => Object.keys(games).find((slug) => games[slug] === game);
 
+/* ------------------------------------------------------------ launcher */
 const launchAttempts = new Map();
 function send(res, status, body, type = 'application/json; charset=utf-8', extraHeaders = {}) {
   res.writeHead(status, {
@@ -120,6 +49,7 @@ function send(res, status, body, type = 'application/json; charset=utf-8', extra
   });
   res.end(typeof body === 'string' || Buffer.isBuffer(body) ? body : JSON.stringify(body));
 }
+function html(res, status, body) { send(res, status, body, 'text/html; charset=utf-8', { 'cache-control': 'no-cache' }); }
 function remoteIp(req) { return req.headers['x-forwarded-for']?.split(',')[0].trim() || req.socket.remoteAddress || 'unknown'; }
 function cookie(req, name) {
   const value = String(req.headers.cookie || '').split(';').map((part) => part.trim()).find((part) => part.startsWith(`${name}=`));
@@ -129,32 +59,16 @@ function sessionCookie(req, slug, token) {
   const secure = req.headers['x-forwarded-proto'] === 'https' ? '; Secure' : '';
   return `sg_${slug}=${encodeURIComponent(token)}; Path=/; Max-Age=120; HttpOnly; SameSite=Strict${secure}`;
 }
-function botName(req) {
-  const ua = String(req.headers['user-agent'] || '').toLowerCase();
-  if (/googlebot/.test(ua)) return 'Googlebot';
-  if (/bingbot/.test(ua)) return 'Bingbot';
-  if (/duckduckbot/.test(ua)) return 'DuckDuckBot';
-  if (/facebookexternalhit|facebot/.test(ua)) return 'Facebook';
-  if (/twitterbot/.test(ua)) return 'Twitter';
-  if (/discordbot/.test(ua)) return 'Discord';
-  return /bot|crawler|spider|slurp|preview/.test(ua) ? 'Other bot' : '';
-}
-function visitorKey(req) {
-  const day = new Date().toISOString().slice(0, 10);
-  return createHmac('sha256', analyticsSecret).update(`${day}|${remoteIp(req)}|${req.headers['user-agent'] || ''}`).digest('base64url').slice(0, 22);
-}
-function eventDay(at = Date.now()) { return new Date(at).toISOString().slice(0, 10); }
-function logEvent(event) {
-  const at = Date.now();
-  appendFile(path.join(analyticsDir, `${eventDay(at)}.jsonl`), `${JSON.stringify({ at, ...event })}\n`, { mode: 0o600 }).catch((error) => console.error('Analytics write failed:', error.message));
-}
-function logPageView(req, pathname) { logEvent({ type: 'page_view', path: pathname, visitor: visitorKey(req), bot: botName(req) || undefined }); }
 function allowLaunch(req) {
   const ip = remoteIp(req); const now = Date.now();
   const attempts = (launchAttempts.get(ip) || []).filter((t) => now - t < 60_000);
   if (attempts.length >= 12) return false;
   attempts.push(now); launchAttempts.set(ip, attempts); return true;
 }
+setInterval(() => {
+  const now = Date.now();
+  for (const [ip, attempts] of launchAttempts) if (!attempts.some((t) => now - t < 60_000)) launchAttempts.delete(ip);
+}, 60_000).unref();
 function healthCheck(game) {
   return new Promise((resolve) => {
     const req = httpRequest({ host: '127.0.0.1', port: game.port, path: game.health, timeout: 1_000 }, (res) => {
@@ -234,209 +148,405 @@ setInterval(async () => {
 
 function finishSession(game, token, session) {
   if (!game.sessions.delete(token)) return;
-  const seconds = Math.max(0, Math.round((Date.now() - session.startedAt) / 1000));
-  logEvent({ type: 'game_session', game: slugOf(game), visitor: session.visitor, seconds });
-}
-function hasAdminAccess(req) { return Boolean(adminToken) && req.headers.authorization === `Bearer ${adminToken}`; }
-async function analyticsSummary(days = 30) {
-  const cutoff = Date.now() - days * 86_400_000;
-  let entries = [];
-  try {
-    const files = (await readdir(analyticsDir)).filter((file) => /^\d{4}-\d\d-\d\d\.jsonl$/.test(file));
-    const contents = await Promise.all(files.map(async (file) => { try { return await readFile(path.join(analyticsDir, file), 'utf8'); } catch { return ''; } }));
-    entries = contents.flatMap((content) => content.trim().split('\n').filter(Boolean).map((line) => { try { return JSON.parse(line); } catch { return null; } }).filter(Boolean)).filter((event) => event.at >= cutoff);
-  } catch { /* Fresh install: no events yet. */ }
-  const views = entries.filter((event) => event.type === 'page_view');
-  const botViews = views.filter((event) => event.bot);
-  const sessions = entries.filter((event) => event.type === 'game_session');
-  const launches = entries.filter((event) => event.type === 'game_launch');
-  const byGame = Object.fromEntries(Object.keys(games).map((game) => [game, { launches: 0, sessions: 0, minutes: 0 }]));
-  for (const event of launches) if (byGame[event.game]) byGame[event.game].launches++;
-  for (const event of sessions) if (byGame[event.game]) { byGame[event.game].sessions++; byGame[event.game].minutes += Math.round(event.seconds / 60); }
-  const daily = {};
-  for (const event of views) { const day = eventDay(event.at); daily[day] ||= { views: 0, visitors: new Set(), bots: 0 }; daily[day].views++; if (event.bot) daily[day].bots++; else daily[day].visitors.add(event.visitor); }
-  return {
-    rangeDays: days, generatedAt: Date.now(), overview: { pageViews: views.length, uniqueVisitors: new Set(views.filter((event) => !event.bot).map((event) => event.visitor)).size, botCrawls: botViews.length, gameLaunches: launches.length, completedSessions: sessions.length, playMinutes: Math.round(sessions.reduce((sum, event) => sum + event.seconds, 0) / 60) },
-    games: byGame,
-    crawlers: Object.entries(botViews.reduce((result, event) => ({ ...result, [event.bot]: (result[event.bot] || 0) + 1 }), {})).map(([name, views]) => ({ name, views })),
-    daily: Object.entries(daily).sort(([a], [b]) => a.localeCompare(b)).map(([day, value]) => ({ day, views: value.views, visitors: value.visitors.size, bots: value.bots })),
-  };
+  // Played until the last heartbeat, not until the session timed out.
+  const seconds = Math.max(0, Math.round((session.lastSeen - session.startedAt) / 1000));
+  hook('event', 'game_session', { game: slugOf(game), seconds, launch: session.launch });
 }
 
 /* ------------------------------------------------------------ rendering */
 const escape = (value) => String(value).replace(/[&<>"']/g, (char) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[char]));
-const favicon = "data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect width='32' height='32' rx='7' fill='%23090b14'/><text x='16' y='23' font-size='19' font-family='monospace' font-weight='bold' fill='%23d9ff55' text-anchor='middle'>S</text></svg>";
+const json = (data) => JSON.stringify(data).replace(/</g, '\\u003c');
 
-function head({ title, description, url, image }) {
-  return `<meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta name="theme-color" content="#090b14">`
-    + `<title>${escape(title)}</title><meta name="description" content="${escape(description)}">`
-    + `<link rel="canonical" href="${escape(url)}"><link rel="icon" href="${favicon}">`
-    + `<meta property="og:type" content="website"><meta property="og:site_name" content="Slopgames">`
-    + `<meta property="og:title" content="${escape(title)}"><meta property="og:description" content="${escape(description)}"><meta property="og:url" content="${escape(url)}">`
-    + (image ? `<meta property="og:image" content="${escape(origin + image)}"><meta name="twitter:image" content="${escape(origin + image)}">` : '')
-    + `<meta name="twitter:card" content="${image ? 'summary_large_image' : 'summary'}"><meta name="twitter:title" content="${escape(title)}"><meta name="twitter:description" content="${escape(description)}">`
-    + `<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin><link rel="stylesheet" href="/assets/site.css">`;
-}
-
-const wordmark = '<a class="wordmark" href="/">SLOP<span>GAMES</span></a>';
-
-// Art is served with a long cache lifetime, so its URL carries a content hash;
-// replacing an image changes the URL and the browser fetches the new one.
+// Everything under /assets/ is served for a year, so its URL carries a hash of
+// the file: replacing a file changes the URL and browsers fetch the new one.
 const assetVersions = new Map();
 function asset(relative) {
   if (!assetVersions.has(relative)) {
     try {
       const bytes = readFileSync(path.join(publicDir, relative.replace(/^\/assets\//, '')));
       assetVersions.set(relative, `${relative}?v=${createHash('sha1').update(bytes).digest('hex').slice(0, 10)}`);
-    } catch { assetVersions.set(relative, relative); }
+    } catch { assetVersions.set(relative, null); }
   }
-  return assetVersions.get(relative);
+  return assetVersions.get(relative) ?? relative;
 }
+const hasAsset = (relative) => { asset(relative); return assetVersions.get(relative) !== null; };
+
+// Each piece of art comes in three WebP widths next to the original JPEG, and
+// a 1200×630 link-preview version. A game added without them still works: its
+// tiles use the JPEG and its previews use the art as it is.
+const artWidths = [480, 800, 1200];
+function srcset(art) {
+  const files = artWidths.map((w) => [art.replace(/\.jpg$/, `-${w}.webp`), w]);
+  return files.every(([file]) => hasAsset(file)) ? files.map(([file, w]) => `${asset(file)} ${w}w`).join(', ') : '';
+}
+const srcsetAttrs = (art, sizes) => { const set = srcset(art); return set ? ` srcset="${set}" sizes="${sizes}"` : ''; };
+const preloadArt = (art, sizes) => { const set = srcset(art); return `<link rel="preload" as="image" href="${asset(art)}"${set ? ` imagesrcset="${set}" imagesizes="${sizes}"` : ''} fetchpriority="high">`; };
+const ogImage = (slug, art) => (hasAsset(`/assets/og/${slug}.jpg`) ? `/assets/og/${slug}.jpg` : art);
+
+// Categories are the tags that more than one game shares.
+const tagLabels = { io: '.io', solo: 'Single player', '3d': '3D', pvp: 'PvP', 'co-op': 'Co-op' };
+const tagLabel = (tag) => tagLabels[tag] || tag[0].toUpperCase() + tag.slice(1);
+const tagSlug = (tag) => (tag === 'solo' ? 'single-player' : tag.replace(/\s+/g, '-'));
+const categories = (() => {
+  const counts = {};
+  for (const game of Object.values(games)) for (const tag of game.tags) counts[tag] = (counts[tag] || 0) + 1;
+  return Object.keys(counts).filter((tag) => counts[tag] >= 2).sort((a, b) => counts[b] - counts[a] || a.localeCompare(b));
+})();
+const categoryOf = (game) => game.tags.find((tag) => categories.includes(tag));
+const inCategory = (tag) => Object.entries(games).filter(([, game]) => game.tags.includes(tag));
 
 const ICONS = {
   new: '<svg viewBox="0 0 24 24"><path d="M12 2.5l2.6 6.2 6.7.5-5.1 4.4 1.6 6.5L12 16.6 6.2 20.1l1.6-6.5L2.7 9.2l6.7-.5z"/></svg>',
   multi: '<svg viewBox="0 0 24 24"><circle cx="8.5" cy="8" r="3.2"/><circle cx="16.5" cy="9" r="2.6"/><path d="M2.5 19c0-3.3 2.7-5.6 6-5.6s6 2.3 6 5.6z"/><path d="M14.2 19c0-1.9-.6-3.5-1.7-4.7.9-.6 2.2-1 3.6-1 2.8 0 5.3 2 5.3 5.7z"/></svg>',
   chevron: '<svg viewBox="0 0 24 24"><path d="M9 5l7 7-7 7"/></svg>',
+  play: '<svg viewBox="0 0 24 24"><path d="M8 5.5v13l10.5-6.5z"/></svg>',
+  expand: '<svg viewBox="0 0 24 24"><path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5"/></svg>',
+  search: '<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>',
 };
 
-/** One game tile. `size` is 'big', 'small' or 'mini'. */
-function tile(slug, game, size = 'small', eager = false) {
+const wordmark = '<a class="wordmark" href="/">SLOP<span>GAMES</span></a>';
+
+function head({ title, description, url, image, imageAlt, kind, slug, preload = '', noindex = false, data = null }) {
+  const img = image ? origin + asset(image) : '';
+  return `<meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta name="theme-color" content="#0d0e1b">`
+    + `<title>${escape(title)}</title><meta name="description" content="${escape(description)}">`
+    + `<link rel="canonical" href="${escape(url)}">`
+    + `<meta name="robots" content="${noindex ? 'noindex, follow' : 'index, follow, max-image-preview:large'}">`
+    + `<link rel="icon" href="/favicon.ico" sizes="48x48"><link rel="icon" href="/favicon.svg" type="image/svg+xml">`
+    + `<link rel="apple-touch-icon" href="/apple-touch-icon.png"><link rel="manifest" href="/site.webmanifest">`
+    + `<meta property="og:type" content="website"><meta property="og:site_name" content="${siteName}"><meta property="og:locale" content="en_US">`
+    + `<meta property="og:title" content="${escape(title)}"><meta property="og:description" content="${escape(description)}"><meta property="og:url" content="${escape(url)}">`
+    + (img ? `<meta property="og:image" content="${escape(img)}"><meta property="og:image:type" content="image/jpeg"><meta property="og:image:width" content="1200"><meta property="og:image:height" content="${image.startsWith('/assets/og/') ? 630 : 675}"><meta property="og:image:alt" content="${escape(imageAlt || title)}">` : '')
+    + `<meta name="twitter:card" content="${img ? 'summary_large_image' : 'summary'}"><meta name="twitter:title" content="${escape(title)}"><meta name="twitter:description" content="${escape(description)}">`
+    + (img ? `<meta name="twitter:image" content="${escape(img)}"><meta name="twitter:image:alt" content="${escape(imageAlt || title)}">` : '')
+    + `<link rel="preload" href="${asset('/assets/fonts/nunito-800.woff2')}" as="font" type="font/woff2" crossorigin>`
+    + preload
+    + `<link rel="stylesheet" href="${asset('/assets/site.css')}">`
+    + (data ? `<script type="application/ld+json">${json(data)}</script>` : '')
+    + (hook('head', { kind, slug, url }) || '');
+}
+
+function header(active = '') {
+  return `<header class="site-header"><div class="bar">${wordmark}
+<form class="search" action="/" method="get" role="search">${ICONS.search}
+<input id="search" name="q" type="search" placeholder="Search games" aria-label="Search games" autocomplete="off"></form></div>
+<nav class="cats bar" aria-label="Categories"><a class="chip" href="/"${active === '' ? ' aria-current="page"' : ''}>All</a>${categories.map((tag) => `<a class="chip" href="/category/${tagSlug(tag)}"${active === tag ? ' aria-current="page"' : ''}>${escape(tagLabel(tag))}</a>`).join('')}</nav></header>`;
+}
+
+function footer(page) {
+  const links = hook('slot', 'footer', page) || '';
+  return `${slot('bottom', page)}<footer class="site-footer"><div class="bar">
+<div class="foot-top">${wordmark}<nav aria-label="Games">${Object.entries(games).map(([slug, game]) => `<a href="/games/${slug}">${escape(game.name)}</a>`).join('')}</nav></div>
+<div class="foot-bottom"><nav aria-label="Categories">${categories.map((tag) => `<a href="/category/${tagSlug(tag)}">${escape(tagLabel(tag))} games</a>`).join('')}</nav>
+${links ? `<nav class="foot-site" aria-label="Site">${links}</nav>` : ''}<p>© ${new Date().getFullYear()} ${siteName}</p></div>
+</div></footer>`;
+}
+
+/** One game tile. `size` is 'big', 'small', 'mini' or 'grid', and picks the image width. */
+const tileSizes = {
+  big: '(max-width: 720px) 100vw, 34vw',
+  small: '(max-width: 720px) 50vw, 17vw',
+  strip: '(max-width: 720px) 62vw, (max-width: 1100px) 25vw, 17vw',
+  mini: '132px',
+  grid: '(max-width: 720px) 100vw, 25vw',
+};
+function tile(slug, game, size = 'strip', eager = false) {
   const multi = game.tags.includes('multiplayer');
   const badge = game.fresh ? `<span class="tile-badge new" title="New">${ICONS.new}</span>`
     : multi ? `<span class="tile-badge multi" title="Multiplayer">${ICONS.multi}</span>` : '';
-  return `<a class="tile ${size}" href="/${slug}/" data-launch="${slug}" data-slug="${slug}" data-name="${escape(game.name)}" data-tags="${game.tags.join(',')}" aria-label="Play ${escape(game.name)}">`
-    + `<img src="${asset(game.art)}" width="1200" height="675" alt=""${eager ? ' fetchpriority="high"' : ' loading="lazy"'}>`
+  return `<a class="tile ${size === 'strip' || size === 'grid' ? '' : size}" href="/games/${slug}" data-launch="${slug}" data-slug="${slug}" data-name="${escape(game.name)}" data-tags="${escape(game.tags.join(','))}">`
+    + `<img src="${asset(game.art)}"${srcsetAttrs(game.art, tileSizes[size])} width="1200" height="675" alt="${escape(`${game.name}: ${game.headline}`)}"${eager ? ' fetchpriority="high"' : ' loading="lazy"'} decoding="async">`
     + badge
     + `<span class="tile-live" hidden><i></i><b></b></span>`
     + `<span class="tile-name">${escape(game.name)}</span></a>`;
 }
 
+function layout({ title, description, path: pagePath, body, kind = 'page', slug, image, imageAlt, preload, noindex, data, active }) {
+  const page = { kind, slug, path: pagePath };
+  return `<!doctype html><html lang="en"><head>${head({ title, description, url: origin + pagePath, image, imageAlt, kind, slug, preload, noindex, data })}</head><body class="${kind}">
+${header(active)}
+${slot('top', page)}
+<main class="bar">${body}</main>
+${footer(page)}
+<script src="${asset('/assets/site.js')}" defer></script></body></html>`;
+}
+
+const organization = { '@type': 'Organization', '@id': `${origin}/#org`, name: siteName, url: `${origin}/`, logo: { '@type': 'ImageObject', url: `${origin}/icon-512.png`, width: 512, height: 512 } };
+const website = { '@type': 'WebSite', '@id': `${origin}/#website`, name: siteName, alternateName: 'Slopgames arcade', url: `${origin}/`, inLanguage: 'en', publisher: { '@id': `${origin}/#org` } };
+const crumbs = (items) => ({
+  '@type': 'BreadcrumbList',
+  itemListElement: items.map(([name, url], i) => ({ '@type': 'ListItem', position: i + 1, name, item: origin + url })),
+});
+
 function homePage() {
   const entries = Object.entries(games);
-  // Only categories with a few games in them earn a chip.
-  const counts = {};
-  for (const [, game] of entries) for (const tag of game.tags) counts[tag] = (counts[tag] || 0) + 1;
-  const tags = Object.keys(counts).filter((tag) => counts[tag] >= 2).sort((a, b) => counts[b] - counts[a]);
   const names = entries.map(([, game]) => game.name);
-  const description = `Free browser games, no download: ${names.slice(0, -1).join(', ')} and ${names.at(-1)}.`;
+  const description = `Free browser games with no download: drifting, .io, battle royale, co-op and tower defence. ${names.slice(0, 3).join(', ')} and more.`;
   const picks = entries.slice(0, 6);
   const together = entries.filter(([, game]) => game.tags.includes('multiplayer'));
-
-  return `<!doctype html><html lang="en"><head>${head({
-    title: 'Slopgames — free browser games, no download',
+  const first = picks[0][1];
+  return layout({
+    title: `${siteName}: Free Browser Games, No Download`,
     description,
-    url: `${origin}/`,
-    image: asset(entries[0][1].art),
-  })}<script type="application/ld+json">${JSON.stringify({
-    '@context': 'https://schema.org',
-    '@type': 'CollectionPage',
-    name: 'Slopgames',
-    url: `${origin}/`,
-    description,
-    hasPart: entries.map(([slug, game]) => ({
-      '@type': 'VideoGame', name: game.name, description: game.description,
-      url: `${origin}/${slug}/`, image: origin + asset(game.art),
-      applicationCategory: 'Game', operatingSystem: 'Web browser', isAccessibleForFree: true,
-    })),
-  })}</script></head><body>
-<header class="site-header"><div class="bar">${wordmark}
-<label class="search"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>
-<input id="search" type="search" placeholder="Search" aria-label="Search games" autocomplete="off"></label></div>
-<nav class="cats bar" aria-label="Categories"><button class="chip" data-tag="all" aria-pressed="true">All</button>${tags.map((tag) => `<button class="chip" data-tag="${escape(tag)}" aria-pressed="false">${escape(tag)}</button>`).join('')}</nav></header>
-<main class="bar">
+    path: '/',
+    kind: 'home',
+    image: ogImage('home', first.art),
+    imageAlt: `${siteName}: ${names.join(', ')}`,
+    preload: preloadArt(first.art, tileSizes.big),
+    data: {
+      '@context': 'https://schema.org',
+      '@graph': [
+        organization, website,
+        { '@type': 'CollectionPage', '@id': `${origin}/#page`, url: `${origin}/`, name: `${siteName}: Free Browser Games`, description, isPartOf: { '@id': `${origin}/#website` },
+          mainEntity: { '@type': 'ItemList', itemListElement: entries.map(([slug, game], i) => ({ '@type': 'ListItem', position: i + 1, url: `${origin}/games/${slug}`, name: game.name })) } },
+      ],
+    },
+    body: `<h1 class="sr-only">${siteName}: free browser games</h1>
 <section class="row" id="continue" hidden><h2>Continue playing ${ICONS.chevron}</h2><div class="strip minis"></div></section>
 <section class="row" id="picks"><h2>Top picks for you</h2><div class="picks">${picks.map(([slug, game], i) => tile(slug, game, i === 0 || i === picks.length - 1 ? 'big' : 'small', i < 3)).join('')}</div></section>
 <section class="row" id="featured"><h2>Featured games</h2><div class="strip">${entries.map(([slug, game]) => tile(slug, game)).join('')}</div></section>
 ${together.length ? `<section class="row" id="together"><h2>Play with friends</h2><div class="strip">${together.map(([slug, game]) => tile(slug, game)).join('')}</div></section>` : ''}
-<section class="row" id="results" hidden><h2 id="results-title">All games</h2><div class="grid">${entries.map(([slug, game]) => tile(slug, game)).join('')}</div><p class="empty" id="no-results" hidden>Nothing matches that.</p></section>
-</main>
-<footer class="bar">${wordmark}</footer>
+<section class="row" id="results" hidden><h2 id="results-title">Results</h2><div class="grid">${entries.map(([slug, game]) => tile(slug, game, 'grid')).join('')}</div><p class="empty" id="no-results" hidden>Nothing matches that.</p></section>
+${launcher()}`,
+  });
+}
 
-<div class="launcher" id="launcher" aria-hidden="true" role="dialog" aria-modal="true" aria-labelledby="launch-title">
+function launcher() {
+  return `<div class="launcher" id="launcher" aria-hidden="true" role="dialog" aria-modal="true" aria-labelledby="launch-title">
 <div class="launcher-box"><button class="close" aria-label="Close game">×</button>
 <h2 id="launch-title">Loading…</h2><p id="launch-text"></p>
 <div class="progress"><i></i></div>
 <div class="embed-actions"><button id="full-screen">Fullscreen</button><button class="close">Back</button></div>
-<iframe id="game-frame" title="Game" allow="fullscreen; autoplay; gamepad; pointer-lock" allowfullscreen></iframe></div></div>
-<script src="/assets/site.js"></script></body></html>`;
+<iframe id="game-frame" title="Game" allow="fullscreen; autoplay; gamepad; pointer-lock" allowfullscreen></iframe></div></div>`;
 }
 
-function offlinePage(game) {
-  const slug = slugOf(game);
-  const title = `${game.name} — play free in your browser | Slopgames`;
-  return `<!doctype html><html lang="en"><head>${head({
-    title,
-    description: `${game.description} Play ${game.name} free in your browser on Slopgames.`,
-    url: `${origin}/${slug}/`,
-    image: asset(game.art),
-  })}<script type="application/ld+json">${JSON.stringify({
-    '@context': 'https://schema.org', '@type': 'VideoGame', name: game.name, description: game.description,
-    url: `${origin}/${slug}/`, image: origin + asset(game.art),
-    applicationCategory: 'Game', operatingSystem: 'Web browser', isAccessibleForFree: true,
-  })}</script></head><body class="offline"><main>${wordmark}
-<section class="offline-card"><img class="offline-art" src="${asset(game.art)}" width="1200" height="675" alt="${escape(game.name)} key art" fetchpriority="high">
-<h1>${escape(game.name)}</h1>
-<button data-launch="${slug}">Play</button></section>
-</main><script src="/assets/site.js"></script></body></html>`;
+const dateLabel = (iso) => new Date(`${iso}T12:00:00Z`).toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric', timeZone: 'UTC' });
+
+function gamePage(slug) {
+  const game = games[slug];
+  const url = `/games/${slug}`;
+  const category = categoryOf(game);
+  const title = `${game.name}: ${game.headline}, Play Free Online | ${siteName}`;
+  const others = Object.entries(games).filter(([other]) => other !== slug);
+  const side = slot('game-side', { kind: 'game', slug, path: url });
+  const modes = game.modes?.length ? `<h2>${escape(game.modesTitle || 'How to play')}</h2><dl class="modes">${game.modes.map(([name, text]) => `<div><dt>${escape(name)}</dt><dd>${escape(text)}</dd></div>`).join('')}</dl>` : '';
+  const tips = game.tips?.length ? `<h2>Tips</h2><ul class="tips">${game.tips.map((tip) => `<li>${escape(tip)}</li>`).join('')}</ul>` : '';
+  const trail = [['Home', '/'], ...(category ? [[`${tagLabel(category)} games`, `/category/${tagSlug(category)}`]] : []), [game.name, url]];
+  return layout({
+    title: title.length > 62 ? `${game.name}: ${game.headline} | ${siteName}` : title,
+    description: game.description,
+    path: url,
+    kind: 'game',
+    slug,
+    image: ogImage(slug, game.art),
+    imageAlt: `${game.name}: ${game.headline}`,
+    preload: preloadArt(game.art, '(max-width: 1100px) 100vw, 1100px'),
+    data: {
+      '@context': 'https://schema.org',
+      '@graph': [
+        organization, website,
+        { '@type': 'WebPage', '@id': `${origin}${url}#page`, url: origin + url, name: title, description: game.description,
+          isPartOf: { '@id': `${origin}/#website` }, primaryImageOfPage: origin + asset(game.art), breadcrumb: { '@id': `${origin}${url}#crumbs` }, mainEntity: { '@id': `${origin}${url}#game` } },
+        { '@id': `${origin}${url}#crumbs`, ...crumbs(trail) },
+        {
+          '@type': 'VideoGame', '@id': `${origin}${url}#game`, name: game.name, alternateName: `${game.name}: ${game.headline}`,
+          url: origin + url, description: game.description, image: origin + asset(game.art),
+          genre: game.genre, keywords: game.tags.join(', '), playMode: `https://schema.org/${game.playMode}`,
+          gamePlatform: ['Web browser', 'PC', ...(/touch|phone/i.test(game.devices) ? ['Mobile'] : [])],
+          applicationCategory: 'GameApplication', operatingSystem: 'Any (web browser)', inLanguage: 'en',
+          isAccessibleForFree: true, offers: { '@type': 'Offer', price: 0, priceCurrency: 'USD', availability: 'https://schema.org/InStock' },
+          datePublished: game.published, dateModified: game.updated, publisher: { '@id': `${origin}/#org` }, author: { '@id': `${origin}/#org` },
+        },
+      ],
+    },
+    active: category,
+    body: `<nav class="crumbs" aria-label="Breadcrumb">${trail.map(([name, href], i) => (i < trail.length - 1 ? `<a href="${href}">${escape(name)}</a><span aria-hidden="true">›</span>` : `<span aria-current="page">${escape(name)}</span>`)).join('')}</nav>
+<div class="stage-wrap${side ? ' with-side' : ''}"><section class="player" aria-label="${escape(game.name)}">
+<div class="stage" id="stage" data-slug="${slug}" data-name="${escape(game.name)}">
+<img class="stage-art" src="${asset(game.art)}"${srcsetAttrs(game.art, '(max-width: 1100px) 100vw, 1100px')} width="1200" height="675" alt="${escape(`${game.name} gameplay`)}" fetchpriority="high">
+<div class="stage-cover"><button class="play" data-launch="${slug}" aria-label="Play ${escape(game.name)}">${ICONS.play}<span>Play</span></button><p class="stage-status" aria-live="polite"></p></div>
+<iframe class="stage-frame" title="${escape(game.name)}" allow="fullscreen; autoplay; gamepad; pointer-lock" allowfullscreen hidden></iframe>
+</div>
+<div class="stage-bar"><h1>${escape(game.name)} <span>${escape(game.headline)}</span></h1>
+<span class="stage-live" hidden><i></i><b></b></span>
+<button class="stage-full" type="button" data-fullscreen hidden>${ICONS.expand}<span>Fullscreen</span></button></div>
+</section>${side}</div>
+${slot('game-below', { kind: 'game', slug, path: url })}
+<div class="about"><article class="about-main">
+<h2>About ${escape(game.name)}</h2>${game.about.map((p) => `<p>${escape(p)}</p>`).join('')}
+${modes}
+<h2>Controls</h2><table class="controls"><tbody>${game.controls.map(([keys, action]) => `<tr><th scope="row">${escape(keys)}</th><td>${escape(action)}</td></tr>`).join('')}</tbody></table>
+${tips}
+</article>
+<aside class="facts" aria-label="Details"><dl>
+<div><dt>Players</dt><dd>${escape(game.players)}</dd></div>
+<div><dt>Plays with</dt><dd>${escape(game.devices)}</dd></div>
+<div><dt>Genre</dt><dd>${escape(game.genre.join(', '))}</dd></div>
+<div><dt>Added</dt><dd><time datetime="${game.published}">${dateLabel(game.published)}</time></dd></div>
+<div><dt>Updated</dt><dd><time datetime="${game.updated}">${dateLabel(game.updated)}</time></dd></div>
+<div><dt>Price</dt><dd>Free, in your browser</dd></div>
+</dl><div class="facts-tags">${game.tags.map((tag) => (categories.includes(tag) ? `<a class="chip" href="/category/${tagSlug(tag)}">${escape(tagLabel(tag))}</a>` : `<span class="chip">${escape(tagLabel(tag))}</span>`)).join('')}</div></aside></div>
+<section class="row" id="more"><h2>More games</h2><div class="strip">${others.map(([other, g]) => tile(other, g)).join('')}</div></section>`,
+  });
+}
+
+function categoryPage(tag) {
+  const list = inCategory(tag);
+  const label = tagLabel(tag);
+  const url = `/category/${tagSlug(tag)}`;
+  const description = `${list.length} free ${label.toLowerCase()} games to play in your browser, no download: ${list.map(([, game]) => game.name).join(', ')}.`;
+  return layout({
+    title: `${label} Games: Play Free Online | ${siteName}`,
+    description,
+    path: url,
+    kind: 'category',
+    image: ogImage(list[0][0], list[0][1].art),
+    imageAlt: `${label} games on ${siteName}`,
+    active: tag,
+    data: {
+      '@context': 'https://schema.org',
+      '@graph': [
+        organization, website,
+        { '@type': 'CollectionPage', '@id': `${origin}${url}#page`, url: origin + url, name: `${label} games`, description, isPartOf: { '@id': `${origin}/#website` },
+          breadcrumb: crumbs([['Home', '/'], [`${label} games`, url]]),
+          mainEntity: { '@type': 'ItemList', itemListElement: list.map(([slug, game], i) => ({ '@type': 'ListItem', position: i + 1, url: `${origin}/games/${slug}`, name: game.name })) } },
+      ],
+    },
+    body: `<nav class="crumbs" aria-label="Breadcrumb"><a href="/">Home</a><span aria-hidden="true">›</span><span aria-current="page">${escape(label)} games</span></nav>
+<section class="row"><h1 class="page-title">${escape(label)} games</h1><div class="grid">${list.map(([slug, game], i) => tile(slug, game, 'grid', i < 2)).join('')}</div></section>
+<section class="row"><h2>More games</h2><div class="strip">${Object.entries(games).filter(([, game]) => !game.tags.includes(tag)).map(([slug, game]) => tile(slug, game)).join('')}</div></section>
+${launcher()}`,
+  });
+}
+
+function notFoundPage(pathname) {
+  return layout({
+    title: `Page not found | ${siteName}`,
+    description: 'That page is not here. Pick a game instead.',
+    path: pathname,
+    kind: 'missing',
+    noindex: true,
+    body: `<section class="row"><h1 class="page-title">That page is not here</h1><p class="lead">Pick a game instead.</p>
+<div class="grid">${Object.entries(games).map(([slug, game]) => tile(slug, game, 'grid')).join('')}</div></section>${launcher()}`,
+  });
+}
+
+function sitemap() {
+  const newest = Object.values(games).map((game) => game.updated).sort().at(-1);
+  const urls = [
+    { loc: '/', lastmod: newest, priority: '1.0' },
+    ...Object.entries(games).map(([slug, game]) => ({ loc: `/games/${slug}`, lastmod: game.updated, priority: '0.9', image: game.art, title: game.name })),
+    ...categories.map((tag) => ({ loc: `/category/${tagSlug(tag)}`, lastmod: inCategory(tag).map(([, game]) => game.updated).sort().at(-1), priority: '0.7' })),
+    ...(hook('sitemap') || []).map((entry) => ({ loc: entry.path, priority: entry.priority || '0.3', lastmod: entry.lastmod })),
+  ];
+  return `<?xml version="1.0" encoding="UTF-8"?>\n<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9" xmlns:image="http://www.google.com/schemas/sitemap-image/1.1">\n`
+    + urls.map((u) => `<url><loc>${escape(origin + u.loc)}</loc>${u.lastmod ? `<lastmod>${u.lastmod}</lastmod>` : ''}<priority>${u.priority}</priority>`
+      + (u.image ? `<image:image><image:loc>${escape(origin + u.image)}</image:loc></image:image>` : '') + '</url>').join('\n')
+    + '\n</urlset>\n';
+}
+
+function manifest() {
+  return {
+    name: siteName, short_name: siteName, description: 'Free browser games, no download.',
+    start_url: '/', scope: '/', display: 'standalone', background_color: '#0d0e1b', theme_color: '#0d0e1b',
+    icons: [
+      { src: '/icon-192.png', sizes: '192x192', type: 'image/png' },
+      { src: '/icon-512.png', sizes: '512x512', type: 'image/png' },
+      { src: '/icon-maskable.png', sizes: '512x512', type: 'image/png', purpose: 'maskable' },
+    ],
+  };
 }
 
 /* --------------------------------------------------------- static assets */
-const mime = { '.css': 'text/css; charset=utf-8', '.js': 'application/javascript; charset=utf-8', '.svg': 'image/svg+xml', '.png': 'image/png', '.jpg': 'image/jpeg', '.webp': 'image/webp', '.ico': 'image/x-icon', '.html': 'text/html; charset=utf-8' };
-async function staticFile(res, relative, cache = false) {
+const mime = {
+  '.css': 'text/css; charset=utf-8', '.js': 'application/javascript; charset=utf-8', '.svg': 'image/svg+xml', '.png': 'image/png',
+  '.jpg': 'image/jpeg', '.webp': 'image/webp', '.ico': 'image/x-icon', '.woff2': 'font/woff2', '.txt': 'text/plain; charset=utf-8',
+};
+async function staticFile(res, relative, cache) {
   const file = path.resolve(publicDir, relative.replace(/^\/+/, ''));
   if (!file.startsWith(publicDir + path.sep)) return send(res, 403, 'Forbidden', 'text/plain; charset=utf-8');
   try {
     if (!(await stat(file)).isFile()) throw new Error('not a file');
-    send(res, 200, await readFile(file), mime[path.extname(file)] || 'application/octet-stream',
-      cache ? { 'cache-control': 'public, max-age=604800' } : {});
+    send(res, 200, await readFile(file), mime[path.extname(file)] || 'application/octet-stream', { 'cache-control': cache });
   } catch {
     send(res, 404, 'Not found', 'text/plain; charset=utf-8');
   }
 }
+const rootFiles = { '/favicon.ico': 'icons/favicon.ico', '/favicon.svg': 'icons/favicon.svg', '/apple-touch-icon.png': 'icons/apple-touch-icon.png', '/icon-192.png': 'icons/icon-192.png', '/icon-512.png': 'icons/icon-512.png', '/icon-maskable.png': 'icons/icon-maskable.png' };
+
+/* ---------------------------------------------------------------- routes */
+function pageView(req, pathname, kind, slug) { hook('event', 'page_view', { path: pathname, kind, game: slug }, req); }
 
 const server = createServer(async (req, res) => {
   const url = new URL(req.url || '/', `http://${req.headers.host || 'localhost'}`);
   // Crawlers and uptime checks send HEAD; Node drops the body for those itself,
   // so every GET route can answer them unchanged.
   const method = req.method === 'HEAD' ? 'GET' : req.method;
-  if (method === 'GET' && url.pathname.startsWith('/assets/')) {
-    return staticFile(res, url.pathname.slice(8), url.pathname.startsWith('/assets/art/'));
+  const { pathname } = url;
+
+  if (method === 'GET' && pathname.startsWith('/assets/')) {
+    // Versioned URLs never change; the rest is cached for an hour.
+    return staticFile(res, pathname.slice(8), url.searchParams.has('v') || pathname.startsWith('/assets/fonts/') ? 'public, max-age=31536000, immutable' : 'public, max-age=3600');
   }
-  if (method === 'GET' && url.pathname === '/robots.txt') return send(res, 200, `User-agent: *\nAllow: /\nDisallow: /admin\nSitemap: ${origin}/sitemap.xml\n`, 'text/plain; charset=utf-8');
-  if (method === 'GET' && url.pathname === '/sitemap.xml') {
-    const urls = [`${origin}/`, ...Object.keys(games).map((slug) => `${origin}/${slug}/`)];
-    return send(res, 200, `<?xml version="1.0" encoding="UTF-8"?><urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">${urls.map((loc, index) => `<url><loc>${loc}</loc><changefreq>weekly</changefreq><priority>${index === 0 ? '1.0' : '0.9'}</priority></url>`).join('')}</urlset>`, 'application/xml; charset=utf-8');
+  if (method === 'GET' && rootFiles[pathname]) return staticFile(res, rootFiles[pathname], 'public, max-age=86400');
+  if (method === 'GET' && pathname === '/site.webmanifest') return send(res, 200, manifest(), 'application/manifest+json; charset=utf-8', { 'cache-control': 'public, max-age=86400' });
+
+  if (extension.handle) {
+    try { if (await extension.handle(req, res, url)) return; } catch (error) { console.error('Extension handle() failed:', error.message); }
   }
-  if (method === 'GET' && url.pathname === '/admin') return staticFile(res, 'admin.html');
-  if (method === 'GET' && url.pathname === '/api/admin/stats') { if (!hasAdminAccess(req)) return send(res, 401, { error: 'Unauthorized' }); return send(res, 200, await analyticsSummary(Math.min(90, Math.max(1, Number(url.searchParams.get('days')) || 30)))); }
-  if (method === 'GET' && url.pathname.startsWith('/__game-offline/')) {
-    const game = games[url.pathname.split('/').pop()];
-    if (!game) return send(res, 404, { error: 'Game not found' });
-    logPageView(req, `/${slugOf(game)}/`);
-    return send(res, 200, offlinePage(game), 'text/html; charset=utf-8');
+
+  if (method === 'GET' && pathname === '/robots.txt') {
+    return send(res, 200, `User-agent: *\nAllow: /\nDisallow: /api/\nDisallow: /__game-offline/\n\nSitemap: ${origin}/sitemap.xml\n`, 'text/plain; charset=utf-8', { 'cache-control': 'public, max-age=3600' });
   }
-  if (method === 'GET' && url.pathname === '/api/games') {
-    return send(res, 200, { games: Object.entries(games).map(([slug, game]) => ({
-      slug, name: game.name, state: game.state, players: game.sessions.size,
-      description: game.description, blurb: game.blurb, art: game.art, tags: game.tags,
-    })) });
+  if (method === 'GET' && pathname === '/sitemap.xml') return send(res, 200, sitemap(), 'application/xml; charset=utf-8', { 'cache-control': 'public, max-age=3600' });
+
+  // A game whose server is asleep: Nginx hands the request here. Its page has
+  // the Play button that wakes it.
+  if (method === 'GET' && pathname.startsWith('/__game-offline/')) {
+    const slug = pathname.split('/').pop();
+    if (!games[slug]) return html(res, 404, notFoundPage(pathname));
+    return send(res, 302, '', 'text/plain; charset=utf-8', { location: `/games/${slug}` });
   }
-  const match = url.pathname.match(/^\/api\/games\/([a-z-]+)\/(launch|heartbeat)$/);
+  if (method === 'GET' && (pathname === '/games' || pathname === '/games/')) return send(res, 301, '', 'text/plain; charset=utf-8', { location: '/' });
+  const pageMatch = pathname.match(/^\/games\/([a-z0-9-]+)(\/?)$/);
+  if (method === 'GET' && pageMatch && games[pageMatch[1]]) {
+    if (pageMatch[2]) return send(res, 301, '', 'text/plain; charset=utf-8', { location: `/games/${pageMatch[1]}${url.search}` });
+    pageView(req, pathname, 'game', pageMatch[1]);
+    return html(res, 200, gamePage(pageMatch[1]));
+  }
+  const categoryMatch = pathname.match(/^\/category\/([a-z0-9-]+)\/?$/);
+  const category = categoryMatch && categories.find((tag) => tagSlug(tag) === categoryMatch[1]);
+  if (method === 'GET' && category) {
+    pageView(req, pathname, 'category');
+    return html(res, 200, categoryPage(category));
+  }
+
+  if (method === 'GET' && pathname === '/api/games') {
+    return send(res, 200, { games: Object.entries(games).map(([slug, game]) => ({ slug, name: game.name, state: game.state, players: game.sessions.size })) });
+  }
+  const match = pathname.match(/^\/api\/games\/([a-z-]+)\/(launch|heartbeat)$/);
   if (method === 'POST' && match) {
     const game = games[match[1]]; if (!game) return send(res, 404, { error: 'Game not found' });
     if (match[2] === 'launch') {
       if (!allowLaunch(req)) return send(res, 429, { error: 'Please wait a moment before launching again.' });
-      const token = randomBytes(24).toString('base64url'); game.sessions.set(token, { startedAt: Date.now(), lastSeen: Date.now(), visitor: visitorKey(req) }); game.lastActivity = Date.now();
-      try { await startGame(game); logEvent({ type: 'game_launch', game: match[1], visitor: visitorKey(req) }); return send(res, 200, { ok: true, token, url: `/${match[1]}/` }, undefined, { 'set-cookie': sessionCookie(req, match[1], token) }); }
-      catch (error) { game.sessions.delete(token); return send(res, 503, { error: 'The game server could not start. Please try again shortly.' }); }
+      const token = randomBytes(24).toString('base64url');
+      const session = { startedAt: Date.now(), lastSeen: Date.now() };
+      game.sessions.set(token, session); game.lastActivity = Date.now();
+      try {
+        await startGame(game);
+        session.launch = hook('event', 'game_launch', { game: match[1] }, req);
+        return send(res, 200, { ok: true, token, url: `/${match[1]}/` }, undefined, { 'set-cookie': sessionCookie(req, match[1], token) });
+      } catch { game.sessions.delete(token); return send(res, 503, { error: 'The game server could not start. Please try again shortly.' }); }
     }
     const token = req.headers['x-game-session'] || cookie(req, `sg_${match[1]}`);
     if (typeof token === 'string' && game.sessions.has(token)) { game.sessions.get(token).lastSeen = Date.now(); game.lastActivity = Date.now(); return send(res, 204, '', undefined, { 'set-cookie': sessionCookie(req, match[1], token) }); }
     return send(res, 401, { error: 'Session expired' });
   }
-  if (method === 'GET' && url.pathname === '/') { logPageView(req, '/'); return send(res, 200, homePage(), 'text/html; charset=utf-8'); }
+  if (method === 'GET' && pathname === '/') { pageView(req, '/', 'home'); return html(res, 200, homePage()); }
+  if (method === 'GET') return html(res, 404, notFoundPage(pathname));
   send(res, 404, 'Not found', 'text/plain; charset=utf-8');
 });
-await mkdir(analyticsDir, { recursive: true, mode: 0o700 });
-server.listen(port, '127.0.0.1', () => console.log(`Slopgames portal listening on 127.0.0.1:${port}`));
+
+hook('init', { games, origin, layout, escape, asset });
+server.listen(port, '127.0.0.1', () => console.log(`Slopgames portal listening on 127.0.0.1:${port}${extension.handle || extension.event ? ' (with extension)' : ''}`));
 for (const signal of ['SIGTERM', 'SIGINT']) process.on(signal, () => { for (const game of Object.values(games)) stopGame(game); server.close(() => process.exit(0)); });

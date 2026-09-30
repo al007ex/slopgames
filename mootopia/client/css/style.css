@@ -1,3 +1,6 @@
+/* Fonts are served with the game rather than from a font CDN. */
+@font-face { font-family: 'Hammersmith One'; font-style: normal; font-weight: 400; font-display: swap; src: url(../fonts/hammersmith-one-400.woff2) format('woff2'); }
+
 :root {
   --font: 'Hammersmith One', 'Trebuchet MS', sans-serif;
   --panel: rgba(62, 42, 24, 0.34);
