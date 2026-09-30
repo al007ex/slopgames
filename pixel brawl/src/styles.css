@@ -1,3 +1,6 @@
+/* Fonts are served with the game rather than from a font CDN. */
+@font-face { font-family: 'Press Start 2P'; font-style: normal; font-weight: 400; font-display: swap; src: url(./fonts/press-start-2p-400.woff2) format('woff2'); }
+
 /* ============================ Pixel Brawl UI ============================ */
 
 :root {

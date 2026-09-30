@@ -13,7 +13,7 @@ import { CLIENT_TABLE, decode } from '#shared/protocol.js';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const TYPES = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.css': 'text/css; charset=utf-8', '.png': 'image/png', '.svg': 'image/svg+xml', '.json': 'application/json', '.ico': 'image/x-icon', '.woff2': 'font/woff2' };
-const STATIC = { '/js/': 'client/js/', '/css/': 'client/css/', '/img/': 'client/img/', '/shared/': 'shared/' };
+const STATIC = { '/js/': 'client/js/', '/css/': 'client/css/', '/img/': 'client/img/', '/fonts/': 'client/fonts/', '/shared/': 'shared/' };
 
 export function startServer({ port = 3600, host, log = console.log, seed, maxPerIp = 6, bots = 8, tick = true } = {}) {
   const game = new Game({ seed, log });
@@ -45,7 +45,7 @@ export function startServer({ port = 3600, host, log = console.log, seed, maxPer
     if (!file.startsWith(root + path.sep) || file.includes(`${path.sep}server${path.sep}`)) { res.writeHead(403); res.end(); return; }
     fs.readFile(file, (err, data) => {
       if (err) { res.writeHead(404); res.end('not found'); return; }
-      const cache = file.includes(`${path.sep}img${path.sep}`) ? 'public, max-age=86400' : 'no-cache';
+      const cache = /[\\/](img|fonts)[\\/]/.test(file) ? 'public, max-age=86400' : 'no-cache';
       res.writeHead(200, { 'content-type': TYPES[path.extname(file)] || 'application/octet-stream', 'cache-control': cache });
       res.end(data);
     });

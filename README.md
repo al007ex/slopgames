@@ -121,11 +121,12 @@ for more detailed controls, modes, and testing instructions.
 `portal/` is the production launcher for the collection and the site you get at
 <https://slopgames.al007ex.com>. It is a dependency-free Node server that:
 
-- renders the arcade home page and the per-game landing pages,
+- renders the home page, a page for every game (`/games/<slug>`), where the
+  game plays in place, and a page for every category (`/category/<tag>`),
+- serves the sitemap, `robots.txt`, link-preview tags and structured data
+  for search engines, and the site icons,
 - starts a game server only after someone presses Play, and stops it again once
-  the last player leaves (15 minutes idle by default),
-- records first-party, pseudonymous analytics, readable at `/admin` with the
-  `ADMIN_TOKEN`.
+  the last player leaves (15 minutes idle by default).
 
 Run it locally with:
 
@@ -134,16 +135,25 @@ cd portal
 npm start
 ```
 
+Anything specific to whoever runs the site, such as visitor statistics, ads,
+legal pages or search console verification, is not part of this repository.
+It plugs in as a module named by the `SLOPGAMES_EXTENSION` environment
+variable; the hooks it can provide are listed at the top of
+`portal/server.mjs`. Without one, the portal runs as it is.
+
 ### Adding a game
 
-Games live in the `games` object at the top of `portal/server.mjs`. One entry
-holds both what the launcher needs (`dir`, `port`, `health`) and what the page
-shows (`name`, `blurb`, `art`, `tags`, `players`), so adding a game means adding
-an object, dropping a 16:9 image into `portal/public/art/`, and adding a proxy
-block for its port to the Nginx config.
+Games live in `portal/games.mjs`. One entry holds what the launcher needs
+(`dir`, `port`, `health`) and what the game's page shows (name, description,
+controls, tags, dates), so adding a game means adding an entry, dropping a
+16:9 JPEG into `portal/public/art/`, and adding a proxy block for its port to
+the Nginx config.
 
-The home page is rendered from that same object, so the card, the filter chips,
-the sitemap and the JSON-LD all pick the new game up on their own.
+The home page, the game's page, the categories, the sitemap and the structured
+data all pick the new game up on their own. Next to each `<slug>.jpg` the
+portal also looks for `<slug>-480.webp`, `-800.webp` and `-1200.webp` for the
+tiles, and for a 1200×630 `portal/public/og/<slug>.jpg` for link previews. If
+they are missing it uses the JPEG instead.
 
 ### Serving a game under a sub-path
 
